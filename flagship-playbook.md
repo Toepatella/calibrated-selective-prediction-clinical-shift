@@ -1,549 +1,285 @@
-# Flagship — Calibrated Selective Prediction Under Clinical Distribution Shift
-### Single journal-grade build — *supersedes the two-phase MVN→flagship split*
+# Flagship Playbook — Trustworthy, Auditable Selective Prediction for Clinical Imaging Under Distribution Shift
+### An *applied* build/experiment plan for the Springer *Discover Computing* "Intelligent Medicine" collection — *supersedes the theoretical certificate-driven build plan*
 
-> **What changed.** The original `gap3-project-playbook.md` staged a conference MVN (Phase 1) then a flagship superset (Phase 2). This document **collapses that into one journal submission**: the first implementation includes the full method superset — covariate **and** label shift, an **integrated** OOD error budget, a temporal track, formal theory, and a subgroup audit. The two-phase doc is kept intact as a reference; this is the operative plan.
+> **What changed (read first).** This playbook was rewritten from a theoretical-contribution plan (a distribution-free risk *certificate* that survives covariate + label shift with OOD routing folded into one error budget) into an **applied, empirical build plan** for a single journal paper. The contribution is now a **measurement / auditability discipline + a clinician-facing trust interface** built *entirely from existing, citable methods*, claiming **no new guarantee**. The abandoned theory — the 5-condition "guarantee that survives shift" novelty core, the formal theorem with explicit constants, the Generalized-Label-Shift / anticausal-identifiability "tension" machinery, the certified additive `α = α_acc + α_ood` budget, the temporal DtACI track, and the exotic label-shift estimators — is **cut**. The old theory version is recoverable in git history; do not restate it.
 >
-> **Two decisions baked in (yours):**
-> 1. **Keep the staged validation gates as *internal engineering milestones*.** One paper, but you still build and prove each layer on synthetic data before stacking the next. The gates are debugging infrastructure, not lesser papers. Skipping them is how flagship attempts die with "nothing submitted."
-> 2. **Depth over breadth: two imaging benchmarks, full method.** CAMELYON17-WILDS + CheXpert↔MIMIC-CXR, taken all the way (covariate + label shift, integrated OOD, temporal, theory, subgroups). The multi-modality sweep (ECG/retina/2nd-pathology) is explicit, honestly-scoped **future work**, not a v1 obligation.
->
-> **Self-contained.** Everything you need is in *this* file: the **PRIMER** (the five ideas), **Appendix A** reading list, **B** dataset cheat-sheet, **C** glossary, **D** paste-in prompts (all rewritten for this scope), **E** repo tree, **F** notation & formulas, **G** environment cheat-sheet, **H** symbol decoder. You don't need to open `gap3-project-playbook.md` anymore — it's retained only as a historical record of the dropped two-phase split.
->
-> **Conventions.** `monospace` = file/symbol/variable. "Backbone" = the risk-control layer (RCPS/LTT), not the neural net (that's "base model"). Effort: **S** ≤ a day · **M** a few days · **L** a week+ · **XL** multi-week.
+> **This playbook does not restate the method, the positioning, or the protocol — it points to them.** Three documents are authoritative and are the single sources of truth. Where this playbook would otherwise repeat them, it links instead:
+> - [`docs/method_note.md`](docs/method_note.md) — the method spine and **the single source of truth for all notation, symbols, weights, thresholds, and budgets** (§1 notation + §1.8 quick-reference; §2 selective prediction; §3 shift-aware calibration; §4 OOD routing; §5 integrated decision rule; §6 the clinician-facing audit layer; §7 assumptions and honest limitations).
+> - [`docs/positioning_memo.md`](docs/positioning_memo.md) — the applied one-sentence contribution, the scope decision, and the *Discover Computing* venue fit.
+> - [`docs/preregistration.md`](docs/preregistration.md) — the applied evaluation protocol (datasets, shift-type diagnostic, the four baselines, metrics, what is fixed before results).
+
+## Conventions
+
+- **The three docs win every conflict.** This playbook is a build/experiment plan layered *on top of* the three authoritative docs above. Anything here that appears to touch notation, the method, the contribution, or the protocol defers to them; if this file and a doc ever disagree, the doc is right.
+- **Notation lives in one place.** All symbols, weights, thresholds, and budgets are defined once in [method_note.md §1](docs/method_note.md) (with the §1.8 quick-reference table). This playbook redefines nothing; every symbol here carries exactly its method-note meaning. `monospace` = a file / symbol / variable.
+- **"Selective / conformal layer"** = the risk-control machinery (RCPS / LTT), *not* the neural net (that's the "base model").
+- **The honesty discipline (the #1 rule, on every page).** We claim **no new guarantee**. Each method's guarantee is cited strictly as a property *of the method that owns it, under that method's own assumptions*. Under realistic clinical shift we **measure and report** the resulting degradation; we never certify it. The words *certify / certified / guarantee* are **banned for the deployed pipeline**.
+- **Effort key.** **S** ≤ a day · **M** a few days · **L** a week+ · **XL** multi-week.
 
 ---
 
-## 0. The contribution on one page (flagship)
+## 0. The contribution on one page (applied)
 
-**The gap.** No clinically validated selective-prediction method simultaneously: **(1)** abstains/defers; **(2)** gives a *distribution-free* guarantee on the error rate of answered cases; **(3)** keeps that guarantee approximately valid under real clinical shift — **covariate *and* label/prevalence shift**; **(4)** routes far-OOD inputs to abstain **with that routing inside the certified budget** (not a bolt-on); **(5)** is benchmarked on real public medical shift data.
+**One-sentence contribution** (verbatim authority: [positioning_memo.md](docs/positioning_memo.md)). An applied, trustworthy, **auditable selective-prediction pipeline** for clinical image classification under realistic covariate + label shift — assembled **entirely from existing, citable methods** (weighted conformal / RCPS, BBSE and MLLS+BCTS label-shift estimation, post-hoc OOD routing) — whose contribution is a **measurement / auditability discipline and a clinician-facing trust interface** that make the residual shift-induced degradation **visible at the point of care**, **not a new statistical guarantee.**
 
-**Why it's open (from the audit).** TRUECAM is closest but its shift-validity is *empirical* (OOD-removal + "cannot be guaranteed in deployment"), single-domain, no label shift. SCRC/SCoRE have the guarantee but assume exchangeability. Liang & Sun handle shift+OOD but give *no* distribution-free guarantee. Nobody composes **selection + covariate/label shift + integrated far-OOD** under **one** distribution-free risk-control statement that provably survives real shift.
+**The honesty discipline (the #1 rule, on every page).** We **claim no new guarantee.** Each component guarantee is cited strictly as a property *of the method that owns it, under that method's own assumptions* — RCPS `(α,δ)` control only under cal/test exchangeability; weighted-conformal `1−α` *marginal* coverage only under pure covariate shift with the *oracle* likelihood ratio; BBSE/MLLS consistency only under label shift with an invertible `Ĉ_S`; LTT as a plain multiple-looks correction. None of these survives the source→target shift as a deployment certificate, and we **say so**. Under realistic clinical shift we **measure and report** the resulting degradation; we never certify it. The words *certify / certified / guarantee* are **banned for the deployed pipeline** (see [positioning_memo.md "What this memo drops"](docs/positioning_memo.md)).
 
-**Novelty core (never trim):** conditions **(2) + (3) + (4-integrated)** — a distribution-free error guarantee on answered cases that survives real covariate *and* label shift, with OOD routing folded into the same error budget.
+Two published impossibility results make measure-and-report the *only* honest stance, not a concession — they are cited as the **reason to measure, not as scaffolding for a new bound**: OOD detection is not distribution-free learnable in the unrestricted setting (Fang et al., NeurIPS 2022), and finite-sample distribution-free *conditional* coverage under covariate shift is not attainable once the density-ratio weight is estimated (Yang, Kuchibhotla & Tchetgen Tchetgen, JRSS-B 2024). A third structural fact compounds them: combined covariate-and-label shift is **not identifiable** from unlabeled target covariates alone.
 
-| Objective | In v1? | Novelty weight | Notes |
-|---|---|---|---|
-| (1) Abstain/defer | ✅ | Low (table stakes) | Selection threshold on the accepted region |
-| (2) Distribution-free guarantee | ✅ | **Core (spine)** | Weighted RCPS w/ WSR bound; LTT for joint tuning |
-| (3a) Covariate shift | ✅ | **Core** | Clipped density-ratio weights |
-| (3b) Label/prevalence shift | ✅ | **Core (the step up)** | BBSE-estimated label weights, combined |
-| (4) Far-OOD routing, **integrated** | ✅ | **Core (beats TRUECAM)** | Split α across accept-error + OOD-leakage |
-| (5) Real public benchmarks | ✅ ×2 | Validation | CAMELYON17 + CheXpert↔MIMIC, both shift types |
-| (5′) Many modalities | ⛔ future work | Breadth | Stated as the honest open extension |
-| Temporal/continual (DtACI) | ✅ | Medium | Long-run track; complementary promise |
-| Subgroup validity | ✅ | Medium (clinical credibility) | Per-group risk + coverage; RLCP optional |
+**What we measure (the object), not certify.** The quantity we care about is the answered-case target risk `R_T^accept := E_{P_T}[ ℓ(Y, ŷ(X)) | A(X) ]` over the in-scope/answered event `A(x)` ([method_note.md §1.1, §1.5.1](docs/method_note.md)). We tune operating thresholds on calibration data, apply the weighted correction, and **measure** realized selective risk, coverage, and OOD-leakage on held-out target — reporting the degradation overall and by subgroup. The two operating budgets `α_acc` (accepted in-scope risk) and `α_ood` (far-OOD leakage on a stated exposure set `O`) are **separately measured** operating budgets; their sum is a *reporting convenience*, **not** a union-bound certificate ([method_note.md §1.6](docs/method_note.md); [preregistration.md §6.2, §8](docs/preregistration.md)).
 
-**The honesty constraint (write on a sticky note).** *Covariate **and** label shift, modelled explicitly* + *unlabeled target sample of size m* + *far-OOD routed away so residual density ratio is bounded* + *label proportions estimable (BBSE identifiability)* ⇒ "**approximately valid**." Exact distribution-free validity under *arbitrary* shift with *zero* target info is impossible. Every guarantee sentence carries this.
+**The explainability hook (why this is the right venue).** The contribution is *explainability via auditability*: rather than a saliency map, the [audit layer (method_note.md §6)](docs/method_note.md) surfaces, per case, the routing decision over `A(x)`, the recalibrated posterior `σ̃(f(x))`, a per-case weight-context chip (`ŵ(x,ŷ)` as a *representativeness* flag), and the cohort reliability flag `n_eff`; and per cohort, a subgroup audit of selective risk, coverage, and routing rates with finite-sample intervals. Its explicit job is to make the residual degradation the method *warns about* **visible at the point of care** — an interpretable account of the model's own reliability. This is the honest counterpart to detect-and-remove pipelines (e.g. **TRUECAM**): we do not beat them with a stronger guarantee; we **measure and report the residual leakage** they leave unquantified, and route the flagged tail to a human.
 
-**Done =** a journal-grade paper + reproducible release whose headline shows the accepted-case risk held at ≤ α under real covariate *and* label shift on both imaging benchmarks — where naïve conformal, and a TRUECAM-style empirical pipeline, visibly break — with OOD error inside the certified budget and a subgroup audit.
+**Venue & deadline.** Springer *Discover Computing*, collection **"Intelligent Medicine: Machine Learning and Explainable AI for Next-Generation Healthcare"** (open access; central emphasis = explainability + trustworthy/auditable ML). **Submission deadline 2026-10-05.** Today is **2026-06-26** — about 3.5 months out. Venue mapping is argued in full in [positioning_memo.md "Venue fit"](docs/positioning_memo.md).
+
+**Done =** a journal-grade applied paper + a reproducible release that, on **two imaging benchmarks** (CAMELYON17-WILDS; CheXpert ↔ MIMIC-CXR, both directions) under realistic covariate + label shift, **measures whether the shift-aware pipeline maintains/improves realized selective risk and coverage relative to the naive baseline** where **naive split-conformal degrades** — together with a **measured far-OOD leakage screen** against a named `α_ood` budget on a stated, swappable exposure set, and a **subgroup audit** with finite-sample intervals — **all MEASURED, none certified.** We *want* the shift-aware pipeline to maintain useful selective risk at useful coverage and *expect* the naive baseline to degrade, but the deliverable is the measurement, not an assured outcome. Concretely: every headline number is either a finite-sample *estimate* (`x̂`) with its interval or a *measured* diagnostic, with its assumption and its measured degradation disclosed.
 
 ---
 
-## 1. Strategy: one paper, staged internally
+## 1. Strategy: one applied paper, built in staged engineering milestones
 
-**The merge.** *Publishing* = a single flagship journal submission. *Engineering* = the same staged ladder as before, with each gate now an **internal milestone** you must pass before adding the next layer. You are not writing two papers; you are de-risking one.
+**The shape.** *Publishing* = one *Discover Computing* submission. *Engineering* = a staged ladder where each layer is built and **validated on synthetic data as an empirical engineering milestone** before the next layer is stacked. You are not proving a bound at each gate; you are **de-risking one applied paper** by checking that each added layer behaves as intended on data where you control the ground truth. (The detailed file-by-file build sequence and the synthetic milestone for each layer are §5; this section fixes the *principle*.)
 
-**Attribution discipline (the rule that protects the result).** The headline number is produced with a **standard backbone** + the standard `u(x)` (softmax-response/energy) + spectral-norm Mahalanobis++ `o(x)`. Fancier base models (DDU, SNGP, deep ensembles) appear **only as ablations layered on top**, never as the foundation. Reason: validity comes from the conformal layer and is *base-model-agnostic*; a fancier net only buys efficiency (less abstention at equal guaranteed risk). Building the core on SNGP hands Reviewer 2 the kill — *"is the win just the backbone?"* Keep the win attributable.
+**Empirical milestone ladder (engineering checks, NOT proofs that a bound holds).** Each milestone is a *measured comparison against the naive baseline* on synthetic data with known shift — it answers "does this layer empirically do its job?", never "does `R_T^accept ≤ α`?":
 
-**Depth-over-breadth, stated honestly.** Two imaging modalities (histopathology, chest X-ray) × two distinct shift mechanisms (scanner/stain; institution/population) + estimated label shift + temporal drift on one site. Condition (5′) breadth is **future work**; the discussion says so plainly. This is still strictly beyond every audited competitor.
-
-**The internal gate ladder (what must turn green, in order).**
 ```
-G-A  exchangeable selective RCPS  → synthetic: accepted-risk ≤ α straddles α across splits
-G-B  + covariate weights          → synthetic shift: true weights restore ≤ α, none visibly violates
-G-C  + label-shift weights        → synthetic prevalence shift: covariate-only fails, label-aware restores
-G-D  + integrated OOD budget      → imperfect detector: bolt-on leaks, integrated bound holds
-G-E  + temporal DtACI             → injected change-point: fixed threshold drifts, DtACI restores long-run risk
-G-R  real data headline           → both datasets: ≤ α under real covariate+label shift where baselines break
+M-1  exchangeable selective RCPS   → on exchangeable synthetic data, CHECK that the RCPS-selected
+                                      operating point reproduces the known risk–coverage trade-off
+                                      (a wiring sanity-check under exchangeability, not a
+                                      budget-satisfaction claim)
+M-2  + covariate weights           → under known synthetic covariate shift, MEASURE whether the
+                                      weighted path recovers realized selective risk that the
+                                      unweighted (naive) path loses
+M-3  + label-shift weights         → under known synthetic prevalence shift, TEST whether covariate-
+                                      only weighting is insufficient and whether the label-aware
+                                      (MLLS+BCTS) correction measurably improves realized risk;
+                                      sweep a growing class-conditional residual to MAP the point where
+                                      the correction degrades (a measured failure boundary, not a proof)
+M-4  + OOD screen                   → with a deliberately imperfect detector, MEASURE whether the screen
+                                      reduces far-OOD leakage vs no screen, and report the residual
+                                      leakage on O against α_ood
+M-5  real-data headline            → on both benchmarks: MEASURE realized selective risk and coverage
+                                      for the shift-aware pipeline vs naive conformal and the
+                                      TRUECAM-style baseline, reporting the degradation of each
+M-6  subgroup audit                → per-subgroup realized selective risk, coverage, and routing
+                                      rates with finite-sample intervals (reporting, not a guarantee)
 ```
-*If a synthetic gate fails, the real result cannot exist — stop and fix the layer before moving on.*
+
+These milestones gate **engineering progress** (if M-2's weighted path does not empirically beat the unweighted path on data with *known* shift, the real-data result cannot exist — fix the layer first). They are explicitly **not** certificate gates: no milestone claims `≥ α`, an "integrated budget bound," or an identifiability result. The OOD step is a **measured screen** with reported leakage on a stated, swappable `O` — distribution-free OOD detection is provably not learnable (Fang et al. 2022), so there is nothing to certify there. The combine step combines the two weights via the per-`x` corrector `Ẑ(x)`: `ŵ(x,y) = ŵ_lab(y)·ŵ_cov(x)/Ẑ(x)` ([method_note.md §3.3](docs/method_note.md)) — **not** the naive product `ŵ_cov·ŵ_lab`, which double-counts. The protocol that fixes what each real-data milestone measures is [preregistration.md](docs/preregistration.md); this ladder defers all metric and cutoff definitions to it.
+
+**Attribution discipline (the rule that keeps the win attributable).** The headline is produced with a **standard backbone** + the standard uncertainty score `u(x)` + the plain tied-covariance Mahalanobis OOD score (Lee et al. 2018; the [method_note.md §4.1](docs/method_note.md) detector, with the Mahalanobis++ L2-normalization *removed*). Fancier base models (DDU, SNGP, deep ensemble) appear **only as ablations layered on top**, never as the foundation. Reason: the measured selective-risk / auditability result is **base-model-agnostic** — a fancier net only moves *efficiency* (less abstention at equal measured risk), not the auditability discipline that is the contribution. Building the core on a fancier net would hand a reviewer the obvious question, *"is the win just the backbone?"*. Reframed honestly: **the realized-risk / auditability result is base-model-agnostic; the net only moves efficiency** ([method_note.md §1.3](docs/method_note.md); [positioning_memo.md](docs/positioning_memo.md)).
+
+**Depth over breadth, stated honestly.** Two imaging benchmarks taken deep — **CAMELYON17-WILDS** (covariate-dominant, cross-hospital scanner/stain) and **CheXpert ↔ MIMIC-CXR** (mixed covariate + label shift, cross-site, *both directions* as two deployments). Multi-modality breadth (ECG, retina, a second pathology task, dermatology) is **explicit, honestly-scoped future work**, *not* a v1 obligation, and the discussion says so plainly. Dataset authority is [preregistration.md §2](docs/preregistration.md); the depth-over-breadth rationale is [positioning_memo.md "What this memo keeps"](docs/positioning_memo.md).
+
+**Long pole — start now.** CAMELYON17-WILDS loaders (`p-lambda/wilds`) unblock the synthetic-through-real build immediately. **CheXpert ↔ MIMIC-CXR access is the schedule-critical long pole**: begin Stanford AIMI + PhysioNet/CITI credentialing **today** (human approval, not engineering, is the gate). The full ~3.5-month milestone timeline to the 2026-10-05 deadline is §8; the single decision baked in here is *credentialing starts immediately, in parallel with the CAMELYON17 build.*
 
 ---
 
-## 2. Foundations (was Phase 0) — status & remainder
+## 2. Foundations status — what is already DONE
 
-**Built (verified in `phase0_learning.ipynb`):** steps 0.1.1–0.1.6 — split conformal, CRC, selective + the selection-bias trap, RCPS vs CRC vs LTT, weighted conformal + ACI, OOD (Mahalanobis++/kNN) + distance awareness. Implementations cross-checked against canonical sources (`ryantibs/conformal`, `herbps10/AdaptiveConformal`, `mueller-mp/maha-norm`, `deeplearning-wisc/knn-ood`).
+The foundations for this applied paper are complete. This section is a status board, not a work plan: everything below is written and authoritative, and the rest of this playbook builds on it rather than re-deriving it.
 
-**Remaining foundation work (do before/while coding the method):**
-- **2.a Competitor matrix** *(M)* — `analysis/competitor_matrix.csv`, one row per audited work, columns: satisfies (1)–(4)? · exact missing piece · reusable asset. Summarize SCRC's proof structure in your own words (closest ancestor).
-- **2.b Re-verify the gap** *(S)* — run Appendix D-2 falsification on mid-2025→today camera-readies; `analysis/reverify_<date>.md`; verdict OPEN/PARTIAL + dated. (Last audit 2026-06-20 = PARTIALLY ADDRESSED/OPEN.)
-- **2.c Positioning memo** *(M)* — `docs/positioning_memo.md`: gap + one-sentence contribution + the flagship honesty constraint + residual-contribution sentences.
-
----
-
-## 3. Method formalization (the full superset, up front)
-
-Write `docs/method_note.md` with the complete method — not a covariate-only subset.
-
-> **3.1 Notation** *(S)*. `P_S,P_T` source/target · `f` frozen base model · `ŷ(x)` prediction · `u(x)` uncertainty · `g(x)=1[u(x)≤τ]` selection · `ℓ(y,ŷ)∈[0,1]` loss · `w_cov(x)=p_T(x)/p_S(x)` covariate density ratio · `w_lab(y)=p_T(y)/p_S(y)` label ratio · `w(x,y)` combined weight · `o(x)` OOD score · thresholds `τ, λ, t_ood` · budgets `α=α_acc+α_ood`, `δ` · target sample `m`.
-
-> **3.2 Target guarantee (integrated)** *(S)*. Box this:
-> ```
-> R_T^accept := E_{P_T}[ ℓ(Y,ŷ(X)) | g(X)=1, o(X)≤t_ood ] ≤ α_acc
-> + a certified bound on residual risk from far-OOD that the detector MISSED,
-> so the end-to-end answered-case risk ≤ α = α_acc + α_ood.
-> ```
-> In words: among target cases the model answered and the detector judged in-scope, expected loss ≤ α_acc; the leakage of undetected far-OOD is separately bounded by α_ood; together ≤ α. **This integration is the direct answer to TRUECAM's "cannot be guaranteed in deployment."**
-
-> **3.3 The four exchangeability-breakers + neutralizers** *(M)*. Four-row table:
-> - **Selection** → calibrate the controlling threshold *on the accepted region*.
-> - **Covariate shift** → reweight calibration by clipped `ŵ_cov(x)` from a domain discriminator.
-> - **Label/prevalence shift** → estimate `p_T(y)` by **MLLS+BCTS** (Alexandari et al. 2020) — calibrate the classifier with Bias-Corrected Temperature Scaling *first*, then EM; this dominates vanilla BBSE under class imbalance. **RLLS** (Azizzadenesheli et al. 2019, regularized BBSE) is the robustness companion / ablation. Vanilla BBSE (Lipton et al. 2018) kept only as the naïve foil. The real lever is calibration, not the solver — MLLS and BBSE are the *same estimator* under different calibration (Garg et al. 2020). Fold `ŵ_lab(y)` in. *Derive the combined weight under a stated shift model — do not naïvely multiply `w_cov·w_lab`* (double-counts when both are present).
-> - **Far-OOD tail** → where `ŵ>w_max` or `o(x)>t_ood`, route to abstain; the removed mass is exactly what would blow up the weighted bound. Detector error is *budgeted*, not assumed-zero.
->
-> **3.3b The combined weight + the identifiability tension** *(M)* — *the central caveat, write it on the sticky note next to the honesty constraint.* The combined-shift problem has a canonical name: **Generalized Label Shift / Generalized Target Shift** (Zhang et al. 2013 → Gong et al. 2016 → Tachet des Combes et al. 2020). For medical imaging commit to the **anticausal `Y→X`** factorization (disease causes image), so label shift is primary and scanner/stain is a *residual* class-conditional shift. Under that model the honest combined weight is `w(x,y) = w_lab(y) · r(x,y)`, where `r(x,y)=p_T(x|y)/p_S(x|y)`. Writing it as `r(x)` (y-independent) **is the simplifying assumption** ("the new scanner shifts every class identically") — state it as a limitation, don't bury it in notation.
-> **The tension (name it in the paper, don't hide it):** *every* label-shift estimator — BBSE, MLLS+BCTS, RLLS, GS-B³SE, FMAPLS — assumes `p(x|y)` is **fixed** to identify `w_lab(y)` from unlabeled target. The residual `r` is exactly the violation of that assumption. So **a fancier label-shift estimator buys robustness to sampling noise / imbalance, NOT robustness to conditional shift** — it cannot rescue Gap-2. Three ways to live with it (pick per dataset, report which): **(a)** assume `r` benign + stress-test by injecting growing conditional shift in G-C; **(b)** use a small labeled-target slice and estimate the joint ratio directly via an `(x,y)`-discriminator (sidesteps identifiability, trades double-counting *bias* for *variance*); **(c)** sensitivity-bound how wrong `w_lab` gets as a function of `‖r‖` and propagate into the conformal budget (the §3.6 route).
-
-> **3.4 Calibration + inference algorithm** *(M)*. Implementable pseudocode:
-> ```
-> CALIBRATION (source cal set + unlabeled target sample + target predictions):
->   1. Fit domain discriminator d(x); w_cov(x)=clip(d/(1-d)*c, 0, w_max).
->   2. Estimate p_T(y) via MLLS+BCTS (calibrate f first, then EM) from target predictions;
->      w_lab(y)=p_T(y)/p_S(y). Combine: w(x,y)=w_lab(y)*r(x,y) under the anticausal model
->      (NOT w_cov*w_lab). If conditional shift r is non-benign, fall back to a joint
->      (x,y)-discriminator on a small labeled-target slice. (RLLS = robustness ablation.)
->   3. Fit OOD score o(x) on f's spectral-norm features; pick t_ood for the α_ood budget.
->   4. Among NON-OOD calibration points, choose (τ, λ) so the WEIGHTED accepted risk
->      ≤ α_acc via weighted RCPS with the WSR (betting) upper bound.
->      If (τ,λ,t_ood) are tuned JOINTLY, wrap selection in LTT (multiple testing) to stay valid.
->   5. Record (τ, λ, t_ood, w_max, c, α_acc, α_ood).
-> INFERENCE on target x:
->   if o(x)>t_ood or w(x)>w_max:  abstain (far-OOD)        # (4)
->   elif u(x)>τ:                  abstain (defer)           # (1)
->   else:                         answer ŷ(x), risk ≤ α     # (2)+(3a)+(3b)
-> ```
-
-> **3.5 Backbone decision** *(S)*. **Weighted RCPS** for the deployed `(α,δ)` PAC claim, with the **WSR / hedged-capital upper bound** (`gostevehoward/confseq`, `src/confseq/betting.py`) instead of Hoeffding–Bentkus — tighter, and it matters *more* here because importance weights inflate the risk-estimate variance (which widens the UCB). **LTT** (`aangelopoulos/ltt`) wraps the calibration when you tune `(τ,λ,t_ood)` jointly on one calibration set — a single RCPS bound is *invalid* under multiple looks. **CRC** kept only as the less-conservative comparison row. Reference RCPS impl: `aangelopoulos/rcps` (`core/` concentration bounds + λ̂).
-
-> **3.6 Theorem + formal statement** *(L)*. State the **finite-sample** bound for selective + weighted RCPS under bounded density ratio (after OOD routing), with **explicit constants** — not just a sketch. Characterize the approximation error as a function of (covariate-weight error) + (**label-weight error: MLLS+BCTS estimation error**) + (**residual conditional-shift `‖r‖`**, the term that is *not* identifiable from unlabeled target — the §3.3b tension) + (detector error → α_ood). Give the label-shift corollary. This is the journal-grade theory step the MVN deferred.
-
-> **3.7 Red-team** *(S)*. Run Appendix D-3 against the full note; fix the weakest claim (likely: the combined covariate+label weight identifiability under residual conditional shift §3.3b, or the integrated-budget detector-error term). *Anticipate the reviewer who knows GS-B³SE/FMAPLS and asks "why not just a better label-shift estimator?" — the answer is in §3.3b: the gap is conditional shift, which every such estimator assumes away.*
-
----
-
-## 4. Lock experimental design *before* coding
-
-> **4.1 Datasets + splits** *(S)* → `docs/design.md §datasets`.
-> - **CAMELYON17-WILDS** (`p-lambda/wilds`): 5-hospital scanner/stain shift; official ID vs OOD split; carve an unlabeled *target-calibration* slice disjoint from target test.
-> - **CheXpert ↔ MIMIC-CXR**: institution/population shift; shared-pathology label subset (`docs/label_mapping.md`); **both directions** (gives you a second shift instance cheaply). Start credentialing **now** (Stanford AIMI; PhysioNet + CITI) — human approval is the long pole.
-> - **Far-OOD probes**: off-modality / wrong-anatomy / non-medical injections to test (4) + α_ood.
-
-> **4.2 Shift scope** *(S)*. Covariate **and** label/prevalence shift (this is the upgrade). Temporal drift handled in the DtACI track (§5, Stage E) by time-ordering one site.
-
-> **4.3 Metrics with formulas** *(M)* → `analysis/metrics.py` + `docs/design.md §metrics`.
-> - *Primary*: realized accepted-target risk vs α, as a **distribution over many cal/test splits** (histogram + α line) — the guarantee is marginal over the calibration draw.
-> - *Integrated-budget*: accepted risk **with a deliberately imperfect OOD detector** — show the bound still holds (bolt-on leaks).
-> - *Label-shift*: realized risk under estimated vs oracle `p_T(y)`.
-> - *Operating*: risk–coverage curve + AURC (source & target).
-> - *Temporal*: long-run realized risk across a change-point (DtACI vs fixed).
-> - *Subgroup*: per-group coverage **and** risk (sex, age, site).
-> - *Secondary*: base-model ECE, abstention rate, accepted accuracy.
-
-> **4.4 Baselines** *(S)*. (1) naïve split-conformal selective [the foil]; (2) softmax-response/SelectiveNet; (3) SCRC (guarantee, no shift); (4) weighted conformal w/o selection; (5) a **TRUECAM-style empirical pipeline** (OOD-removal + CRC, no maintained guarantee) — the closest competitor, beat it head-to-head; (6) deep ensemble + threshold [UQ ceiling]; (7) **Wang & Qiao 2025** — "Conformal Prediction Under Generalized Covariate Shift with Posterior Drift" ([arXiv:2502.17744](https://arxiv.org/abs/2502.17744)), **the nearest published conformal treatment of combined shift — now a mandatory baseline.** It delivers *coverage* only; you remain distinct on **risk control (RCPS) + selection + integrated-OOD budget + label-shift estimation**. Position explicitly: their "posterior drift" (`p(y|x)` changes) is a different factorization from your anticausal label-shift + residual model; (8) **yours**.
-
-> **4.5 Ablations** *(S)*. base-model {standard, DDU, SNGP, deep ensemble} (validity unchanged, efficiency moves); **label-shift estimator {MLLS+BCTS [core], RLLS, vanilla BBSE [foil], FMAPLS, GS-B³SE}** — *same logic as the base-model ablation: validity flat, efficiency moves; proves your conformal layer is estimator-agnostic and lets you cite the 2025 bleeding edge without betting the result on it. FMAPLS/GS-B³SE are reimplement-from-scratch (no released code) → run only if time allows, FMAPLS first;* **WSR vs Hoeffding–Bentkus** bound; covariate-only vs covariate+label weights; **bolt-on vs integrated** OOD budget; `w_max` and target-size `m` sensitivity; OOD detector {Maha++, kNN}; backbone RCPS vs CRC.
-
-> **4.6 Pre-register** *(S)* → `docs/preregistration.md`, committed to git with a timestamp *before* results: "Yours holds accepted risk ≤ α under covariate+label shift on both datasets while ≥1 baseline (incl. the TRUECAM-style pipeline under label shift) visibly violates it, at comparable or better coverage, with OOD error inside the budget."
-
-> **4.7 Critique** *(S)*. Run Appendix D-4; add any missing baseline.
-
----
-
-## 5. Build sequence with internal gates
-
-Repo scaffold (full tree in **Appendix E**): `data/ models/ ood/ conformal/ experiments/ analysis/ tests/ docs/ paper/`. Pin env (**Appendix G**), wire W&B/MLflow, Hydra configs + `set_seed()`, `pytest`. Then build in order — **each stage ends in its synthetic gate; do not proceed past a red gate.**
-
-> **Stage A — exchangeable selective RCPS** *(M)* → `conformal/selective.py`, `conformal/rcps.py` (WSR bound). **Gate G-A**: synthetic exchangeable data, accepted-risk ≤ α straddles α across many splits. Ref: `aangelopoulos/rcps`, `confseq`.
-
-> **Stage B — covariate weights** *(M)* → `conformal/weights.py` (discriminator + clipped ratio), weighted path in `rcps.py`. **Gate G-B**: synthetic known covariate shift — true weights restore ≤ α on target; no-weights visibly violates. Ref: `ryantibs/conformal` `weighted.quantile`.
-
-> **Stage C — label-shift weights** *(M)* → `conformal/label_shift.py`. Primary estimator **MLLS+BCTS** (calibrate `f`, then EM); **RLLS** as the regularized-robustness path; vanilla BBSE as the foil. Combine under the **anticausal `Y→X`** model as `w(x,y)=w_lab(y)·r(x,y)` (§3.3b), *not* `w_cov·w_lab`. **Gate G-C** (now two sub-gates): **(C1)** synthetic known prevalence shift, `p(x|y)` fixed — covariate-only weighting fails, label-aware restores ≤ α. **(C2 — the honest one)** inject *growing residual conditional shift* `r` and watch `w_lab` error degrade: this empirically maps the identifiability tension and tells you when to switch to the labeled-slice joint-discriminator fallback. *Biggest theory step; budget time — the tension in §3.3b is the journal's central caveat.*
-
-> **Stage D — integrated OOD budget** *(M)* → `ood/detector.py` (Maha++/kNN on spectral-norm features) + budget split in the calibration. **Gate G-D**: with a *deliberately imperfect* detector, the bolt-on version leaks risk above α while the integrated-budget bound holds. This is the TRUECAM-beating result *in vitro*.
-
-> **Stage E — temporal DtACI track** *(M)* → `conformal/aci.py`. Time-order one site; stream; update `α_t` from realized error. Use **DtACI** (`isgibbs/DtACI`) for abrupt drift, not vanilla ACI. **Gate G-E**: injected change-point — fixed weighted threshold drifts out of control, DtACI restores long-run risk. State plainly: this is **long-run/amortized**, a *complementary* promise to the finite-sample RCPS bound, and needs label feedback.
-
-> **Stage R — real-data headline** *(M each)*. CAMELYON17 then CheXpert↔MIMIC, all baselines, sweep α, many splits. **Gate G-R**: yours ≤ α under real covariate+label shift where naïve and the TRUECAM-style pipeline break, on **both** datasets. *If unconvincing, iterate the method, not the plot.*
-
-> **Stage S — subgroup / local coverage** *(M)*. Per-subgroup risk + coverage (sex, age, site); selective prediction can *magnify* disparities (Jones et al. 2021). Optionally strengthen toward (approx.) conditional coverage with **RLCP** (`rohanhore/RLCP`).
-
-> **Code review** *(S)*. Run Appendix D-5; fix leakage / off-by-one / clip-bias. All synthetic gates must still pass after fixes.
-
----
-
-## 6. Run, ablate, red-team (deep, on the two datasets)
-
-- **6.1** Full ablation set (§4.5), tabulated from logs — the base-model {standard/DDU/SNGP/ensemble} efficiency-frontier plot is a flagship highlight (validity flat, efficiency moves).
-- **6.2** Confound checks: report coverage *with* risk (validity not bought by near-total abstention); weight-error stress (degrade the discriminator); small-`m` breakdown; BBSE-error stress.
-- **6.3** Find and *report* a shift where it fails — a characterized boundary is a feature, not an embarrassment.
-- **6.4** Results red-team (Appendix D-6); rewrite the central claim to match the evidence.
-- **Done when** every table/figure regenerates from logged runs by one script, and the top 3 alternative explanations are ruled out with specific plots.
-
----
-
-## 7. Write the journal paper
-
-- **7.1 Venue** *(S)*: Medical Image Analysis / IEEE TMI / npj Digital Medicine / TMLR by theory-vs-clinical balance. Match template now.
-- **7.2 Structure** *(S)*: intro (gap + one-sentence contribution + honesty constraint) → related work (your matrix) → method (§3, full superset) → theory (§3.6, with constants) → experiments (§5–6) → subgroup audit → limitations → reproducibility. Lead with the structural finding: *"guarantee xor shift-robustness — nobody has both, and OOD has never been inside the budget."*
-- **7.3 Figures** *(M)*: headline risk-vs-α under covariate+label shift; integrated-vs-bolt-on under an imperfect detector; risk–coverage; base-model efficiency frontier; DtACI change-point; subgroup table; OOD-routing illustration.
-- **7.4 Prose** *(L)*: every guarantee sentence carries its assumption; quote TRUECAM's *"cannot be guaranteed in deployment"* as the contrast you resolve.
-- **7.5 Reviewer-2 pass** *(S)*: Appendix D-7 three-reviewer sim; apply top-3 revisions.
-- **7.6 Honest "what remains open"** *(S)*: Appendix D-8 audit — name multi-modality breadth (5′), arbitrary-shift limits, and BBSE identifiability as the open edges.
-- **7.7 Release** *(S)*: pinned env, configs, seeds, one script per figure; data-access README (can't redistribute CheXpert/MIMIC — ship splits + steps); Zenodo DOI in the paper.
-
----
-
-## ● Consolidated gate ladder (honor in order)
-
-- [ ] **G-A** exchangeable accepted-risk ≤ α (synthetic).
-- [ ] **G-B** covariate weights restore ≤ α (synthetic).
-- [ ] **G-C** label-aware weights restore ≤ α where covariate-only fails (synthetic).
-- [ ] **G-D** integrated budget holds under an imperfect detector where bolt-on leaks (synthetic).
-- [ ] **G-E** DtACI restores long-run risk across a change-point (synthetic stream).
-- [ ] **G-R** headline ≤ α under real covariate+label shift, both datasets, ≥1 baseline (incl. TRUECAM-style) violates.
-- [ ] Subgroup audit done; limitations honestly bound the claim.
-- [ ] Theory has explicit constants, externally checked (Appendix D-3 + a conformal-literate reader).
-- [ ] Manuscript submitted + reproducible release archived.
-
----
-
-## Risk register (updated for the single-flagship build)
-
-| Risk | Symptom | Mitigation | Stage |
-|---|---|---|---|
-| **Build-everything-blind** | Headline absent, can't localize which of 8 parts is wrong | The internal gate ladder G-A…G-E — never stack past a red gate | §5 |
-| Self-deception on the guarantee | Risk controlled only via near-total abstention | Report coverage with risk; pre-register | 4.6, 6.2 |
-| Data leakage | Suspiciously perfect target coverage | Assert disjoint cal/weight/OOD/test indices; code review | 4.1, §5 review |
-| Combined-weight double-counting | Holds under one shift, breaks when both present | Derive `w(x,y)=w_lab·r` from the anticausal model, don't multiply `w_cov·w_lab` | 3.3b, Stage C |
-| Conditional shift breaks label-weight identifiability | `w_lab` passes C1, silently wrong under real `p(x|y)` drift; no estimator fixes it | State `r⊥y` benign as a limitation; G-C2 stress-test; labeled-slice joint-discriminator fallback; sensitivity-bound into budget | 3.3b, 3.6, Stage C |
-| Label-shift estimator mistaken for the novelty | Reviewer: "is the win just FMAPLS/GS-B³SE?" | Core = MLLS+BCTS (canonical, coded); exotic 2025 estimators are ablation-only | 4.5 |
-| Backbone confound | Gains attributed to SNGP not the contribution | Standard backbone is the base; DDU/SNGP/ensemble are ablations only | §1, 4.5 |
-| Weight / label-shift estimation error | In vitro pass, real-data fail | Clip weights; route high-weight tail; MLLS+BCTS over vanilla BBSE under imbalance; stress-test both | 6.2 |
-| Detector error leaks silently | "Maintained risk" with a leaky OOD route | Integrated α_ood budget + G-D imperfect-detector test | Stage D |
-| Multiple-testing invalidity | RCPS bound used after tuning 3 thresholds | LTT wrapper when jointly tuning | 3.5 |
-| Self-normalized (Hájek) bound goes vacuous under strong shift | Paired numerator-UCB/denominator-LCB composition is *valid* but can blow up when the denominator LCB → 0 under heavy weights | v1 ships the paired bound + `n_eff` abstention gate (correct, just conservative). A **direct betting bound on the ratio itself** would be tighter under strong shift but is genuinely new math, not an off-the-shelf result — optional v2 item, only worth deriving if coverage plots show the v1 bound going vacuous too often. Not a correctness issue. | 3.6, post-G-R |
-| Dataset access latency | Stuck on MIMIC/CheXpert | Credential in foundations; lead with CAMELYON17 | 4.1 |
-| Overclaiming | "Valid under any shift" / "exact under label shift" | Honesty constraint on every guarantee sentence; Reviewer-2 | 0, 7.5 |
-| Breadth creep | Chasing ECG/retina/path#2, nothing submitted | (5′) is explicit future work; two datasets, deep | §1 |
-
----
-
-## Repo map — which repo at which stage
-
-| Stage / component | Repo | Role |
+| Foundation | Artifact | Status |
 |---|---|---|
-| Risk-control spine (RCPS) | [aangelopoulos/rcps](https://github.com/aangelopoulos/rcps) | concentration bounds + λ̂ reference |
-| Tighter UCB (WSR) | [gostevehoward/confseq](https://github.com/gostevehoward/confseq) | `betting.py` hedged-capital bound |
-| Joint-tuning validity (LTT) | [aangelopoulos/ltt](https://github.com/aangelopoulos/ltt) | multiple-testing wrapper |
-| Less-conservative comparison (CRC) | [aangelopoulos/conformal-risk](https://github.com/aangelopoulos/conformal-risk) | CRC baseline row |
-| Covariate weights | [ryantibs/conformal](https://github.com/ryantibs/conformal) | `weighted.quantile` convention |
-| Label-shift estimator (core) | [kundajelab/labelshiftexperiments](https://github.com/kundajelab/labelshiftexperiments) | MLLS+BCTS reference (Alexandari 2020) |
-| Label-shift estimator (robustness) | RLLS — Azizzadenesheli 2019 | regularized BBSE; ill-conditioning fix |
-| Combined-shift model + code | [microsoft/…Generalized-Label-Shift](https://github.com/microsoft/Domain-Adaptation-with-Conditional-Distribution-Matching-and-Generalized-Label-Shift) | GLS (Tachet 2020) — the §3.3b factorization |
-| Joint-shift fallback (labeled slice) | [stanford-futuredata/SparseJointShift](https://github.com/stanford-futuredata/SparseJointShift) | direct `(x,y)` joint-ratio estimation |
-| Temporal track (DtACI) | [isgibbs/DtACI](https://github.com/isgibbs/DtACI) | `DtACI.R` abrupt-drift online CP |
-| OOD score (primary/ablation) | [mueller-mp/maha-norm](https://github.com/mueller-mp/maha-norm) · [deeplearning-wisc/knn-ood](https://github.com/deeplearning-wisc/knn-ood) | Maha++ / kNN on spectral-norm features |
-| Data loaders | [p-lambda/wilds](https://github.com/p-lambda/wilds) | CAMELYON17 |
-| Subgroup local coverage (optional) | [rohanhore/RLCP](https://github.com/rohanhore/RLCP) | approx. conditional coverage |
-| Competitor to beat | [iamownt/TRUECAM](https://github.com/iamownt/TRUECAM) | reference + the head-to-head baseline |
-| Your repo | [Toepatella/calibrated-selective-prediction-clinical-shift](https://github.com/Toepatella/calibrated-selective-prediction-clinical-shift) | the build |
+| Competitor matrix | [`analysis/competitor_matrix.csv`](analysis/competitor_matrix.csv) — one row per audited work, with which trustworthy-prediction ingredient it does/doesn't supply and the reusable asset | **Done** — the honest contrast (esp. TRUECAM) is sourced from here, not re-litigated as a "gap" |
+| Method spine (single source of truth for notation) | [`docs/method_note.md`](docs/method_note.md) — notation; selective prediction / abstention; shift-aware calibration; OOD routing; integrated decision rule; auditability layer; assumptions & limitations | **Done** |
+| Positioning (applied contribution + venue fit) | [`docs/positioning_memo.md`](docs/positioning_memo.md) — the one-sentence contribution, what is deliberately *not* claimed, Discover Computing fit | **Done** |
+| Pre-registration (evaluation protocol) | [`docs/preregistration.md`](docs/preregistration.md) — datasets, shift-type diagnostic, baselines, metrics, what is fixed before results | **Done** |
+| Phase-0 learning notebook | `phase0_learning.ipynb` (steps 0.1.1–0.1.6: split conformal, CRC, selective + selection-bias trap, RCPS/CRC/LTT, weighted conformal, OOD/distance-awareness), cross-checked against canonical sources | **Done** |
 
-*Full per-repo notes: `repo_links.md`. This document is now self-contained — Primer, paste-in prompts, and reference tables are in the appendices below.*
+**Honesty discipline carried from the docs (the #1 rule for everything below).** We claim **no new guarantee**. Each method's guarantee is cited only as a property **of that method under its own assumptions** (RCPS `(α,δ)` control under cal/test exchangeability; weighted conformal `1−α` *marginal* coverage under pure covariate shift with the *oracle* likelihood ratio; BBSE *consistency* under label shift with an invertible confusion matrix; MLLS *consistency* additionally requiring the base classifier be calibrated — which is exactly why BCTS is in the pipeline). Under realistic clinical shift those assumptions break, and we **measure and report** the resulting degradation — never certify it. The words *certify / certified / guarantee* are not used for the deployed pipeline.
+
+Because the foundations are settled, the remainder of this playbook is purely a **build/experiment plan**: it points to the three docs as the authority and never restates or contradicts them.
 
 ---
 
-# PRIMER — the five ideas this project composes
+## 3. Method — fully specified in the method note (do not restate here)
 
-> **Who this is for.** You can run Python and follow a tutorial; you know intro probability/averages. Not assumed: dense math notation, proofs, PyTorch fluency. After this you can read every symbol in the doc. You've already built P.3's five ideas as toy notebooks (0.1.1–0.1.6), so treat this as reference, not a blocker.
+The method is **fully specified in [`docs/method_note.md`](docs/method_note.md)**, which is also the **single source of truth for all notation, weights, thresholds, and budgets**. This playbook does not restate it and introduces no theory. One-paragraph recap, only so the build stages below are legible:
 
-## P.1 The math you'll actually need
-- **Function `f(x)`** — put `x` (an image) in, get scores out.
-- **Conditional probability `P(A | B)`** — how often `A` happens *among the cases where `B` is true*. **The key one:** the whole guarantee is about the error rate *among the cases the model chose to answer*.
-- **`P_S` vs `P_T`** — the data "pattern" at the **s**ource vs **t**arget hospital. The project is a promise made on `P_S` still holding on `P_T`.
-- **Expectation `E[Z]`** — long-run average. `E[ℓ | answered]` = average loss among answered cases.
-- **Quantile** — the value below which a given fraction of data sits; conformal uses a high quantile of "wrongness scores" as a cutoff.
-- **`α`** — error rate you tolerate (0.05 = 5%). **`δ`** — small allowed chance the *promise itself* fails (confidence `1−δ`). **"Distribution-free"** — the promise holds whatever the data's shape.
-- **Symbols:** `≤`/`≥` at most/least · `∝` proportional to · `⌈·⌉` round up · `inf`/`sup` smallest/largest that works · `1[·]` 1-if-true-else-0 · `x̂` an *estimate*. (Full list: **Appendix H**.)
+> A **frozen** base model `f` produces logits, a recalibrated posterior `σ̃(f(x))`, and penultimate features `φ(x)`. A **selective gate** `g(x)=1[u(x)≤τ]` answers confident cases and defers the rest to a clinician ([§2](docs/method_note.md)). **Shift-aware weighting** corrects the source-calibrated risk for deployment: a domain-discriminator covariate weight `ŵ_cov(x)` and an MLLS+BCTS label-prevalence correction `ŵ_lab(y)` (with BBSE as the baseline/diagnostic), **combined via the per-`x` corrector `Ẑ(x)`** as `ŵ(x,y)=ŵ_lab(y)·ŵ_cov(x)/Ẑ(x)` — **not the naïve product**, which double-counts ([§3](docs/method_note.md)). An **OOD routing** screen sends suspected out-of-distribution scans (`o(x)>t̂_ood`) and untrustworthy-weight cases (`ŵ_cov>w_max`) to a human ([§4](docs/method_note.md)). An **integrated decision rule** assembles these into one accept event `A(x)` ([§5](docs/method_note.md)), and an **auditability layer** surfaces per-case and per-subgroup trust signals ([§6](docs/method_note.md)). The object of interest is the answered-case target risk `R_T^accept`; we calibrate thresholds on source, apply the weighted correction, and then **measure** realized selective risk, coverage, and OOD leakage on held-out target — reporting the degradation, never bounding it.
 
-## P.2 The ML/coding you'll actually need
-- **Logits → softmax** — raw scores squashed to probabilities summing to 1.
-- **Features (embeddings)** — the vector just before the final layer; the OOD detector and the domain discriminator both work on these, not raw pixels.
-- **Train / calibration / test splits** — train fits the model; *calibration* is a separate labeled set used only to set thresholds; test is untouched. **No leakage between them is sacred** — most accidental cheating is a leak here.
-- **PyTorch in a paragraph** — you mostly *load a frozen pretrained model*, *run it* to get logits + features, and *save those numbers*. The contribution is math on the saved numbers (runs in seconds on CPU). You don't need to be a deep-learning engineer.
+**What lives in the method note — go there, don't duplicate:**
 
-## P.3 The five core ideas (plain English, then gentle math)
-1. **Conformal prediction — the honesty thermostat.** Convert shaky confidence into a cutoff with a *real* coverage promise: take a high quantile `q̂` of calibration "wrongness scores," keep every answer less surprising than `q̂`. Kept sets contain the truth ≈`1−α` of the time — *if new data resembles calibration data* (**exchangeability**). Delivers condition **(2)**.
-2. **Risk control — CRC vs RCPS vs LTT.** All pick a threshold so error ≤ α. **CRC:** controls the *average*. **RCPS:** `1−δ` confident *this* model's error ≤ α — the clinical-grade promise. **LTT:** tune several knobs (`τ,λ,t_ood`) at once and stay valid via multiple-testing. Spine of **(2)**.
-3. **Selective prediction — knowing when to say "I don't know."** A threshold `τ` on uncertainty; answer the confident, abstain on the rest. The catch: by answering only easy cases you *bias* the group, so you must set the cutoff *on the answered group itself*. Condition **(1)**.
-4. **Distribution shift — the new-hospital problem (two flavors).** **Covariate shift:** `p(x)` changes — reweight calibration by a density ratio `w_cov(x)` from a source-vs-target discriminator. **Label/prevalence shift:** `p(y)` changes (e.g. the target hospital sees more disease) — estimate the new class proportions with **MLLS+BCTS** (calibrate the model first, then EM; more robust than plain BBSE when classes are imbalanced) and reweight by `w_lab(y)`. *Caveat that runs through the whole project: this estimate is only trustworthy if the disease's appearance `p(x|y)` itself hasn't also shifted — see §3.3b.* **ACI/DtACI:** keep nudging the threshold over time as errors arrive. Condition **(3)** — the novel heart.
-5. **OOD detection + distance awareness — "not even the right kind of input."** Measure how *far* an input's features sit from the training cloud (Mahalanobis++/kNN); far = OOD → abstain. **Spectral normalization** keeps the feature space honest so "far" means far. Condition **(4)** — and routing the far tail *protects* (3) by removing the mass where weights blow up.
+- **Notation, symbols, weights, thresholds, budgets** — [`method_note.md §1`](docs/method_note.md) (and its §1.8 quick-reference table). This is the *only* place notation is defined; the old playbook's notation and symbol-decoder appendices are replaced by this pointer.
+- **Selective prediction / risk-controlled abstention** — [§2](docs/method_note.md).
+- **Shift-aware calibration**, including the `Ẑ(x)`-combine derivation and worked 2-class double-count example, and the reported reliability diagnostics — [§3](docs/method_note.md).
+- **OOD routing** (plain tied-covariance Mahalanobis primary; energy/kNN ablations; measured leakage on the exposure set `O`) — [§4](docs/method_note.md).
+- **Integrated decision rule** and the two **separately-measured** operating budgets `α_acc`, `α_ood` — [§5](docs/method_note.md).
+- **Clinician-facing auditability layer** — [§6](docs/method_note.md).
+- **Assumptions and honest limitations**, anchored on the two impossibility results (Fang et al. 2022; Yang, Kuchibhotla & Tchetgen Tchetgen 2024) — [§7](docs/method_note.md).
 
-## P.4 How they combine (the project in one paragraph)
-A frozen classifier gives **scores** + **features**. **Selective prediction** decides answer-vs-abstain. **Conformal + RCPS** turn each "answer" into a *promised* error rate. **Covariate + label weighting** keeps that promise valid at a new hospital with a different case-mix; **DtACI** handles drift over time. **OOD routing** discards inputs too strange to promise anything about — and, crucially, its own error is folded into the *same* budget (`α = α_acc + α_ood`) rather than bolted on. The contribution is doing all of this at once with the promise **provably surviving real covariate *and* label shift**, demonstrated deeply on two public medical benchmarks.
-
-## P.5 Optional skill-ramp (search for current free versions)
-- **PyTorch:** the official "60-Minute Blitz"; fast.ai.
-- **Math intuition:** 3Blue1Brown; StatQuest.
-- **Conformal:** Angelopoulos & Bates, *A Gentle Introduction to Conformal Prediction* — the single best on-ramp.
-- **Shift + risk control for this project:** Tibshirani et al. 2019 (weighted), Lipton et al. 2018 (BBSE), Bates et al. 2021 (RCPS), Waudby-Smith & Ramdas (betting bound), Gibbs & Candès 2022 (DtACI).
+**Explicitly dropped from the old §3 (the abandoned theory).** There is **no** formal theorem with explicit constants, **no** finite-sample selective+weighted-RCPS bound or label-shift corollary, and **no** Generalized-Label-Shift / Generalized-Target-Shift "identifiability tension" with a residual `r(x,y)=p_T(x|y)/p_S(x|y)` term. The applied combine is `Ẑ(x)`-division under a factorizable-shift premise **adopted as a modeling choice** (not identifiable from unlabeled target); its residual is **measured** on the small labeled slice `D_tar^lab`, never identified or certified. The two budgets `α_acc` and `α_ood` are reporting knobs, **not** a certified additive `α = α_acc + α_ood` union-bound. (See [`positioning_memo.md`](docs/positioning_memo.md) "What this memo drops" for the full list of withdrawn claims.)
 
 ---
 
-# Appendix A — Curated reading list
+## 4. Experimental plan — pre-registered in the protocol (do not duplicate)
 
-**Conformal & risk control**
-- Vovk, Gammerman, Shafer — *Algorithmic Learning in a Random World* (2005) — foundations.
-- Angelopoulos & Bates — *A Gentle Introduction to Conformal Prediction and Distribution-Free UQ* — the on-ramp.
-- Angelopoulos, Bates, Fisch, Lei, Schuster — *Conformal Risk Control* (ICLR 2024, [arXiv:2208.02814](https://arxiv.org/abs/2208.02814)) — expectation control; CRC comparison backbone.
-- Bates, Angelopoulos, Lei, Malik, Jordan — *Distribution-Free, Risk-Controlling Prediction Sets* (JACM 2021, [arXiv:2101.02703](https://arxiv.org/abs/2101.02703)) — **RCPS; the clinical-safety spine.**
-- Angelopoulos, Bates, Candès, Jordan, Lei — *Learn then Test* (AOAS 2025, [arXiv:2110.01052](https://arxiv.org/abs/2110.01052)) — multi-threshold risk control.
-- Waudby-Smith & Ramdas — *Estimating Means of Bounded Random Variables by Betting* (JRSS-B 2024, [arXiv:2010.09686](https://arxiv.org/abs/2010.09686)) — **the WSR/hedged-capital upper bound used in weighted RCPS.**
+The evaluation protocol is the authority in **[`docs/preregistration.md`](docs/preregistration.md)** — datasets, splits, shift construction, the shift-type diagnostic, baselines, metrics, subgroups, and everything fixed before results. This playbook recaps it only enough to drive the build sequence; the prereg governs any conflict.
 
-**Conformal under shift**
-- Tibshirani, Foygel Barber, Candès, Ramdas — *Conformal Prediction Under Covariate Shift* (NeurIPS 2019, [arXiv:1904.06019](https://arxiv.org/abs/1904.06019)) — weighted conformal.
-- Podkopaev & Ramdas — *Distribution-Free Uncertainty Quantification for Classification Under Label Shift* (UAI 2021, [arXiv:2103.03323](https://arxiv.org/abs/2103.03323)) — **the conformal-native label-shift treatment; the glue between the `w_lab` estimator and the weighted-conformal layer.**
-- Wang & Qiao — *Conformal Prediction Under Generalized Covariate Shift with Posterior Drift* (2025, [arXiv:2502.17744](https://arxiv.org/abs/2502.17744)) — **nearest published conformal treatment of combined shift; mandatory baseline (§4.4). Coverage only — you add risk control + selection + integrated OOD.**
-- Gibbs & Candès — *Adaptive Conformal Inference Under Distribution Shift* (NeurIPS 2021, [arXiv:2106.00170](https://arxiv.org/abs/2106.00170)) — online ACI.
-- Gibbs & Candès — *Conformal Inference for Online Prediction with Arbitrary Distribution Shifts* (JMLR 2024, [arXiv:2208.08401](https://arxiv.org/abs/2208.08401)) — **DtACI (Stage E).**
+**Two benchmarks, depth over breadth** ([prereg §2](docs/preregistration.md)):
+- **CAMELYON17-WILDS** — binary tumor-vs-normal, cross-hospital scanner/stain shift; the **covariate-dominant** benchmark. Each source→target hospital pair is reported separately, **never pooled**. Loaders via `p-lambda/wilds`. *Unblocks the build now.*
+- **CheXpert ↔ MIMIC-CXR** — shared-label chest-radiograph finding classification, cross-site **mixed covariate + label** shift; **both directions** run as two separate deployments. *Credentialing (Stanford AIMI; PhysioNet + CITI) is the long pole — start immediately.*
+- **Far-OOD exposure set `O`** — off-modality / wrong-anatomy / non-medical probes; *stated and swappable*, used to set `t̂_ood` and measure leakage ([method_note §4.3](docs/method_note.md), [prereg §5.2](docs/preregistration.md)).
 
-**Label-shift estimation (Stage C — the `w_lab(y)` module)**
-- Lipton, Wang, Smola — *Detecting and Correcting for Label Shift (BBSE)* (ICML 2018, [arXiv:1802.03916](https://arxiv.org/abs/1802.03916)) — the foil / baseline estimator.
-- Azizzadenesheli, Liu, Yang, Anandkumar — *Regularized Learning for Domain Adaptation under Label Shifts (RLLS)* (ICLR 2019, [arXiv:1903.09734](https://arxiv.org/abs/1903.09734)) — **regularized BBSE; the ill-conditioning fix under imbalance (robustness companion).**
-- Alexandari, Kundaje, Shrikumar — *Maximum Likelihood with Bias-Corrected Calibration is Hard-To-Beat at Label Shift Adaptation (MLLS+BCTS)* (ICML 2020, [arXiv:1901.06852](https://arxiv.org/abs/1901.06852)) — **the core estimator; calibrate first, then EM.**
-- Garg, Wu, Balakrishnan, Lipton — *A Unified View of Label Shift Estimation* (NeurIPS 2020, [arXiv:2003.07554](https://arxiv.org/abs/2003.07554)) — **MLLS≡BBSE under different calibration; the real lever is calibration.**
-- Kimura — *Graph-Smoothed Bayesian Black-Box Shift Estimator (GS-B³SE)* (2025, [arXiv:2505.16251](https://arxiv.org/abs/2505.16251)) — *ablation-only; still needs the confusion matrix (graph-prior regularized, HMC/Newton-CG); no released code.*
-- Hu & Barria — *Bayesian Online Label Shift Estimation with Dynamic Dirichlet Priors (FMAPLS)* (2025, [arXiv:2511.18615](https://arxiv.org/abs/2511.18615)) — *ablation-only; no matrix inversion, built for long-tailed imbalance, has an online variant; no released code.*
+**The shift-type diagnostic** ([prereg §3](docs/preregistration.md)): per source→target pair, the **domain-discriminator AUROC** on `φ(x)` is the shift-severity signal. A fixed-before-results cutoff `τ_disc` only **tags the reporting regime** — *pure-label-shift* (AUROC near chance) vs *combined covariate+label* — so the cleaner label-shift result is never silently substituted for the harder combined case. It is a regime **TAG, not a guarantee gate**.
 
-**Combined covariate + label shift (the §3.3b model)**
-- Zhang, Schölkopf, Muandet, Wang — *Domain Adaptation under Target and Conditional Shift* (ICML 2013) — **Generalized Target Shift; the original combined model.**
-- Gong, Zhang, Liu, Tao, Glymour, Schölkopf — *Domain Adaptation with Conditional Transferable Components* (ICML 2016) — what's identifiable under combined shift.
-- Tachet des Combes, Zhao, Wang, Gordon — *Domain Adaptation with Conditional Distribution Matching and Generalized Label Shift (GLS)* (NeurIPS 2020, [arXiv:2003.04475](https://arxiv.org/abs/2003.04475)) — **modern GLS formalization; has Microsoft reference code.**
-- Schölkopf, Janzing, Peters, Sgouritsa, Zhang, Mooij — *On Causal and Anticausal Learning* (ICML 2012, [arXiv:1206.6471](https://arxiv.org/abs/1206.6471)) — the `Y→X` framing that fixes the medical-imaging factorization.
+**Four baselines, exactly** ([prereg §4](docs/preregistration.md)) — same folds, same frozen `f`, same target test set:
+1. naive split-conformal / split-RCPS (`ŵ≡1`, the "ignore the shift" reference);
+2. temperature-scaling-only (post-hoc calibration, no weighting, no OOD routing);
+3. a **TRUECAM-style empirical pipeline** (OOD detect-and-remove) — the honest head-to-head; we beat it by **measuring and reporting** the residual leakage it leaves unquantified, *not* by a stronger guarantee;
+4. BBSE label-weighting-only (the label-shift reference and consistency diagnostic).
 
-**Selective prediction**
-- Geifman & El-Yaniv — *Selective Classification for DNNs* (NeurIPS 2017); *SelectiveNet* (ICML 2019, [arXiv:1901.09192](https://arxiv.org/abs/1901.09192)).
-- Jones et al. — *Selective Classification Can Magnify Disparities Across Groups* (ICLR 2021, [arXiv:2102.11203](https://arxiv.org/abs/2102.11203)) — **the subgroup-audit motivation (Stage S).**
+*(Wang & Qiao 2025 is **not** a baseline; the exotic label-shift estimators RLLS/GS-B³SE/FMAPLS are **not** estimator ablations; the temporal DtACI track is **scope-cut**. The full pipeline of method_note §§3–5 is the method under test against the four above.)*
 
-**OOD detection & deterministic UQ**
-- Lee et al. — Mahalanobis OOD (NeurIPS 2018, [arXiv:1807.03888](https://arxiv.org/abs/1807.03888)); Müller et al. — *Mahalanobis++* (2025, the L2-norm fix); Sun et al. — *kNN OOD* (ICML 2022, [arXiv:2204.06507](https://arxiv.org/abs/2204.06507)).
-- Liu et al. — *SNGP* (NeurIPS 2020); Mukhoti et al. — *DDU*; Ovadia et al. — *Can You Trust Your Model's Uncertainty?* (NeurIPS 2019, [arXiv:1906.02530](https://arxiv.org/abs/1906.02530)) — ensembles as ceiling.
+**Metric families** ([prereg §5](docs/preregistration.md)) — all measured on held-out target, reported with sampling uncertainty, none a certificate:
+- **realized selective (accepted) risk** `R̂_T^accept` via the self-normalized (Hájek) estimator with a betting/hedged-capital interval at confidence `δ`;
+- **coverage**, decomposed into the three routing outcomes (abstain-on-weight, route-on-OOD, defer-on-uncertainty);
+- **AURC**; target **ECE** of `σ̃`;
+- **OOD AUROC / FPR95**, measured far-OOD **leakage** vs `α_ood`, and **exposure-set sensitivity**;
+- **subgroup audit** — per-subgroup selective risk, abstention/defer rate, and routing rates with finite-sample intervals (reporting, **not** a fairness guarantee);
+- **reliability diagnostics** (not gates): `n_eff` (Kish), `κ(Ĉ_S)`, the `q̂_T`-vs-`Ĉ_S p̂_T` consistency check, per-pair discriminator AUROC, clip-induced abstention rate.
 
-**Local / conditional coverage (Stage S, optional)**
-- Hore & Barber — *Conformal Prediction with Local Weights: Randomization Enables Robust Guarantees* (RLCP, [arXiv:2310.07850](https://arxiv.org/abs/2310.07850)).
+**What the prereg fixes before results** ([prereg §6](docs/preregistration.md)): the `(τ,λ,t_ood)` grid `G` and its LTT multiple-looks wrapper (a plain multiplicity correction, **no** new validity claim); the operating budgets `α_acc`, `α_ood`, `δ`; the subgroups; the minimum-coverage floor; routing/weight controls (`w_max`, `ĉ`, `[w_lab,min,w_lab,max]`, plain Mahalanobis primary, MLLS+BCTS primary, `σ̃` recalibrator); and the stress axes (small `m`, source→target pair/direction, target-prevalence sweep). The labeled slice `D_tar^lab` is **measurement-only** — it identifies nothing and certifies nothing ([prereg §7](docs/preregistration.md), [method_note §1.7](docs/method_note.md)); if unavailable for a pair, the combined-shift result is reported **uncorrected**.
 
-**Datasets & calibration**
-- Koh et al. — *WILDS* (ICML 2021); Bandi et al. — *CAMELYON17* (IEEE TMI 2018).
-- Irvin et al. — *CheXpert* (AAAI 2019); Johnson et al. — *MIMIC-CXR* (Sci Data 2019).
-- Guo et al. — *On Calibration of Modern Neural Networks* (ICML 2017) — ECE.
+**What is explicitly not claimed** ([prereg §8](docs/preregistration.md)): no certificate of `R_T^accept`; no certified `α = α_acc + α_ood` split; no identification from `D_tar^lab`; no distribution-free OOD guarantee; no new guarantee from LTT under shift; no per-case guarantee. The success criterion is a **measurement** statement — does the shift-aware pipeline empirically maintain/improve realized selective risk versus the naive baseline, and does the OOD screen measurably reduce leakage — **not** "accepted risk holds ≤ α."
 
-**Competitors (from the audit — beat or cite):** TRUECAM ([arXiv:2501.00053](https://arxiv.org/abs/2501.00053)), SCRC, SCoRE, Conformal Triage, Kim 2026 (Sci Rep), Liang & Sun (TMLR 2024, [arXiv:2405.05160](https://arxiv.org/abs/2405.05160)), the "Pitfalls" critique ([arXiv:2506.18162](https://arxiv.org/abs/2506.18162)).
+*The fixed object is a measurement-and-reporting protocol, not a claim. Anything in this playbook that touches datasets, baselines, metrics, or success criteria defers to [`docs/preregistration.md`](docs/preregistration.md).*
 
 ---
 
-# Appendix B — Dataset cheat-sheet
+## 5. Build sequence — engineering milestones
 
-**v1 (build deep — both modalities, both shift mechanisms):**
+The pipeline is built one layer at a time. Each layer is validated on **synthetic data with a known shift** before the next is stacked — but the synthetic checks are **empirical engineering milestones, not certificate gates**. A milestone asks a *measurement* question — *does the shift-aware layer empirically maintain or improve the realized selective risk where the naive baseline degrades? does the OOD screen measurably reduce far-OOD leakage?* — and **never** "does a bound hold (`≤ α`)." Consistent with the honesty discipline of [method_note.md](docs/method_note.md), no synthetic check proves a guarantee; each method's own guarantee is a property of *that method under its assumptions* (cited in [method_note.md §3.5](docs/method_note.md) and [§7](docs/method_note.md)), and under shift we **measure and report** degradation.
 
-| Dataset | Modality | Shift | Access | Friction |
-|---|---|---|---|---|
-| CAMELYON17-WILDS | Histopathology | 5 hospitals/scanners (covariate) | `wilds` package, open | **Low — start here** |
-| CheXpert | Chest X-ray | Institution/population (covariate + label) | Stanford AIMI registration | Medium |
-| MIMIC-CXR | Chest X-ray | Institution/population (covariate + label) | PhysioNet credentialed + CITI | Medium–High — **start early** |
+The value of building staged is purely de-risking: if a synthetic milestone shows the layer does *not* do what it should on data where the truth is known, the corresponding real-data result cannot be trusted — stop and fix the layer before stacking the next. This is debugging infrastructure for one paper, not a ladder of lesser papers.
 
-> Both CXR directions (CheXpert→MIMIC and MIMIC→CheXpert) give two shift instances cheaply. Label/prevalence shift is estimated per dataset via BBSE. Begin MIMIC/CheXpert credentialing during foundations — human approval is the long pole; CAMELYON17 unblocks the build immediately.
+> **Why these milestones are measurements, not gates.** "Restores/maintains realized selective risk" below always means: *the realized weighted accepted-in-scope risk `R̂_w` (the self-normalized Hájek estimator of [method_note.md §1.7](docs/method_note.md)) measured on a held-out target split, reported with its betting interval, moves in the expected direction relative to the unweighted naive baseline.* It is never a claim that the risk is certified to sit below a budget. On synthetic data we additionally know the oracle weights, so the milestone also checks that the *estimated* weights track the oracle — a debugging convenience the real benchmarks do not afford.
 
-**Future-work breadth (condition 5′ — stated as the open extension, *not* a v1 obligation):** PTB-XL (ECG, cross-cohort), EyePACS↔APTOS (retina, population), MIDOG (2nd pathology scanner-shift), ISIC↔Fitzpatrick17k (dermatology, skin-tone). **Far-OOD probes:** off-modality / wrong-anatomy / non-medical injections to test (4) + the α_ood budget.
+**Repo scaffold.** Build into the tree in [§5.4](#54-repo-tree). Pin the environment ([Appendix E](#appendix-e--environment--command-cheat-sheet)), wire experiment tracking, Hydra configs + `set_seed()`, and `pytest`. The fold-disjointness discipline of [method_note.md §1.7](docs/method_note.md) (`D_cal`, `D_bbse^src`, `D_disc`, `D_tar`, `D_tar^lab`, `O`, held-out test all mutually disjoint) is **asserted in code** from Stage A onward — leakage between folds is the single most common way a milestone passes for the wrong reason.
+
+Effort key: **S** ≤ a day · **M** a few days · **L** a week+.
 
 ---
 
-# Appendix C — Glossary (one line each)
+### Stage A — selective layer *(M)*
 
-- **Exchangeability** — joint distribution invariant to ordering; split-conformal's core assumption. Every failure here is an exchangeability violation.
-- **Marginal coverage** — holds on average over the random cal+test draw, not conditional on a given `x`.
-- **CRC** — calibrate a threshold so the *expected* bounded loss ≤ α (expectation over the calibration draw too).
-- **RCPS** — PAC risk control: `P(R ≤ α) ≥ 1−δ` for your one realized calibration set/model — the stronger clinical statement.
-- **LTT** — risk control for non-monotone losses and multiple thresholds via multiple hypothesis testing (keeps the bound valid when you jointly tune `τ,λ,t_ood`).
-- **WSR / betting (hedged-capital) bound** — a tight, variance-adaptive upper confidence bound; replaces Hoeffding–Bentkus in weighted RCPS where weight-variance inflates the CI.
-- **Selective risk / coverage** — error among answered / fraction answered; the risk–coverage curve / AURC summarizes the tradeoff.
-- **Weighted conformal** — reweight calibration by a density ratio to transport the guarantee under shift.
-- **Covariate vs label shift** — `p(x)` changes (label rule fixed) vs `p(y)` changes (case-mix); different importance weights.
-- **Density ratio `w_cov(x)`** — `p_T(x)/p_S(x)`; from a source-vs-target discriminator; unreliable in the far tail → route to abstain.
-- **Label weight `w_lab(y)`** — `p_T(y)/p_S(y)`; from BBSE-estimated target proportions.
-- **BBSE (Black-Box Shift Estimation)** — estimates target label proportions `p_T(y)` from the source confusion matrix + target predictions, no target labels needed.
-- **Integrated OOD budget** — split total `α = α_acc + α_ood`: accepted in-distribution error + a certified bound on residual far-OOD that the detector missed. Makes OOD part of the guarantee, not a bolt-on.
-- **ACI / DtACI** — online α adjustment for long-run coverage under drift; needs label feedback; DtACI auto-tunes the step size for abrupt drift. Long-run (not per-case finite-sample) control.
-- **Far-OOD** — inputs unlike training; extreme shift tail where weighting fails; the abstain-route is both safety and math.
-- **Distance-aware UQ (SNGP/DDU)** — single-pass models whose uncertainty grows with feature-distance; improves selection/OOD efficiency, not validity.
-- **Spectral normalization** — constrains layer Lipschitz constants → approx. bi-Lipschitz features → feature-distance OOD becomes meaningful (resists feature collapse).
-- **RLCP (randomly localized conformal)** — local-weight + randomization for approximately *conditional* coverage; optional Stage-S strengthening of the subgroup audit.
+**Files.** `conformal/selective.py` (selection gate + accepted-region calibration), `conformal/rcps.py` (RCPS threshold selection with the WSR / hedged-capital betting upper bound from `gostevehoward/confseq`, `betting.py`). Reference impl: `aangelopoulos/rcps`. The selective-risk functional, the RCPS `inf`-rule, and the betting UCB are specified in [method_note.md §2.2](docs/method_note.md); the WSR bound is chosen because importance weights (Stage B onward) inflate the risk-estimate variance.
+
+**Milestone A.** On a held-out **source** split (exchangeable, no shift), the selective layer *runs end-to-end and reproduces the risk–coverage trade-off*: sweeping `τ` traces a monotone risk–coverage curve, and the RCPS-selected `λ̂` lands at the intended operating point on that curve across many calibration/test resamples. This confirms the selection-on-the-accepted-region calibration and the betting UCB are wired correctly — it is a *reproduction-of-the-known-trade-off* milestone, not a claim that accepted risk is certified. (Under exchangeability RCPS does carry its own `(α,δ)` property, cited as a property of RCPS per [method_note.md §2.2](docs/method_note.md); we do not re-assert it once shift enters.)
 
 ---
 
-# Appendix D — All paste-in prompts (updated for the flagship scope)
+### Stage B — covariate weights *(M)*
 
-> Drop into a search-enabled assistant as a second brain. All reflect the v1 scope: covariate **+** label shift, integrated OOD budget, WSR bound, LTT, two-datasets-deep, journal venue.
+**Files.** `conformal/weights.py` (domain discriminator `d(x)` on the frozen embedding `φ(x)` + clipped covariate ratio `ŵ_cov`), weighted path in `rcps.py`. The discriminator density-ratio estimator, the base-rate constant `ĉ = n_S/n_T`, and the clip/route cap `w_max` are in [method_note.md §1.5](docs/method_note.md); the weighted-quantile convention follows `ryantibs/conformal`.
 
-**D-1 · Concept tutor / steelman** — §0.1 / PRIMER
-```
-You are a conformal-prediction and selective-classification expert. I'm building a
-selective medical classifier with a distribution-free risk guarantee on accepted cases
-that must survive covariate AND label/prevalence shift, with far-OOD inputs routed to
-abstain and the routing error folded into the SAME risk budget.
-
-Teach me, precisely and with exact theorem assumptions, how these compose:
-(1) split conformal + the risk-control layer — CRC vs RCPS vs Learn-then-Test (expectation
-    vs PAC (alpha,delta) vs multi-threshold control; assumption; finite-sample vs asymptotic),
-    and why the WSR/betting upper bound is tighter than Hoeffding-Bentkus under importance
-    weighting;
-(2) selective prediction and WHY selection breaks exchangeability, and how selective risk
-    control restores a guarantee on the accepted subset;
-(3) weighted conformal for COVARIATE shift AND BBSE/label-shift correction — what each needs,
-    how to COMBINE the two importance weights without double-counting, and exactly where each
-    fails;
-(4) integrating far-OOD routing into the risk budget: splitting alpha into accepted-error and
-    OOD-leakage, and bounding the residual when the detector is imperfect.
-
-For each: the precise quantity guaranteed, the assumption it rests on, and the single most
-common way practitioners violate it without noticing. Then give me three exam questions and
-grade my answers. Cite real papers with links; flag anything you're unsure exists.
-```
-
-**D-2 · Falsification re-check** — §2.b
-```
-ROLE: Meticulous research-gap auditor for trustworthy ML in healthcare. Use live literature
-search. Default to skepticism; actively try to prove the gap below is ALREADY SOLVED.
-
-GAP: A selective-prediction method for medical models that simultaneously (1) abstains/defers;
-(2) gives a distribution-free guarantee on the error rate of ACCEPTED cases; (3) keeps that
-guarantee approximately valid under REAL clinical COVARIATE AND LABEL/PREVALENCE shift; (4)
-routes far-OOD inputs to abstain WITH THAT ROUTING INSIDE THE CERTIFIED RISK BUDGET (not a
-separate heuristic), evaluated on public medical shift benchmarks.
-
-CLOSED only if ONE work demonstrably does ALL of: abstains; distribution-free error/coverage
-guarantee on accepted cases; that guarantee holds under a real (not synthetic) medical shift
-that includes label/prevalence change, not only covariate change; far-OOD routed to abstain
-with the detector error accounted for in the guarantee; evaluated on >=1 public medical shift
-dataset.
-
-FOCUS: 2025-06 to today. Prioritize MICCAI, MLHC, CHIL, ML4H, NeurIPS/ICML/ICLR, TMLR, Medical
-Image Analysis, IEEE TMI, npj Digital Medicine. Check explicitly: TRUECAM, SCRC, SCoRE,
-Conformal Triage, Kim 2026, weighted/adaptive conformal in medicine, any "selective conformal
-under shift" or "label-shift conformal risk control" work.
-
-OUTPUT: Verdict OPEN / PARTIALLY ADDRESSED / CLOSED + one-line justification; an evidence table
-(Title|Year|Venue|Link|which of (1)-(4) satisfied|what's missing); the closest competitor and
-exactly what it leaves unsolved; the precise residual contribution still novel. Cite every
-claim with a working link + date; separate peer-reviewed from preprints; if a search fails,
-say so rather than guessing.
-```
-
-**D-3 · Method red-team / proof check** — §3.7
-```
-You are a conformal-prediction theorist and Reviewer 2. Below is my method and its claimed
-guarantee [PASTE notation, target guarantee R_T^accept <= alpha = alpha_acc + alpha_ood,
-algorithm, assumptions].
-
-Do five things, harshly:
-1. State the exact conditions under which the accepted-case risk <= alpha holds. Finite-sample
-   or asymptotic? Marginal over what randomness?
-2. Find every place selection, covariate shift, LABEL shift, or far-OOD routing breaks
-   exchangeability that I have NOT neutralized. Give a concrete counterexample for each hole.
-3. Pressure-test the COMBINED covariate+label importance weight: is it identifiable? When does
-   naive multiplication w_cov*w_lab double-count? What structural shift model makes it valid?
-4. Pressure-test the INTEGRATED OOD budget: does alpha_ood actually bound the residual risk
-   from an IMPERFECT detector, or does it leak? Prove or refute. Also: is the WSR-bound +
-   weighting combination valid, and does LTT correctly cover my joint (tau, lambda, t_ood)
-   tuning, or have I invalidated the bound with multiple looks?
-5. Name the single weakest claim a reviewer attacks first, and the smallest change that makes
-   it defensible. Cite the exact theorems (weighted conformal, BBSE, RCPS/LTT, WSR betting,
-   selective conformal), with links. Do not be reassuring; if the guarantee is only
-   "approximate," characterize the error as a function of weight + BBSE + detector error.
-```
-
-**D-4 · Experiment-design critic** — §4.7
-```
-You are an experienced ML-for-health reviewer. Critique this experimental plan for a
-selective-prediction-under-shift JOURNAL paper [PASTE: two imaging datasets taken deep,
-covariate + label shift, integrated-OOD-budget, temporal DtACI, metrics, baselines (incl. a
-TRUECAM-style empirical pipeline), base-model ablation, success criterion].
-
-Tell me: (a) which baseline is missing such that a reviewer says "but did you compare to X?";
-(b) whether my metrics demonstrate the (2)+(3)+(4-integrated) guarantee or just correlate with
-it — especially: does my plot actually show the integrated budget holding under a DELIBERATELY
-imperfect OOD detector, and label-aware weighting beating covariate-only under prevalence
-shift?; (c) the right way to show a finite-sample, calibration-draw-marginal guarantee
-empirically (how many splits, what plot, what statistic); (d) the most likely confound (base
-model just worse on target; gains from the backbone not the guarantee layer) and how to rule
-it out via the {standard, DDU, SNGP, ensemble} ablation; (e) given I deliberately chose DEPTH
-on two imaging datasets over breadth, is that defensible for a top medical-imaging/ML journal,
-and if a reviewer demands breadth, which single extra modality is the cheapest credible
-rebuttal?
-```
-
-**D-5 · Conformal code review** — §5 (code review)
-```
-You are a careful research engineer who has shipped conformal-prediction code. Review this
-implementation of selective + weighted (covariate+label) conformal risk control + integrated
-OOD routing [PASTE code]. Check specifically:
-- off-by-one in the conformal quantile / CRC threshold / RCPS lambda-hat;
-- whether the WSR (betting / hedged-capital) upper confidence bound is implemented correctly
-  and is actually being used in the weighted path (not silently falling back to Hoeffding);
-- data leakage between calibration, weight-fitting, BBSE estimation, OOD-fitting, and test;
-- whether covariate weights AND label weights are normalized correctly and COMBINED without
-  double-counting; whether clipping biases the risk estimate (log the clip fraction);
-- whether the alpha split (alpha_acc + alpha_ood) is enforced and the OOD-leakage term is
-  actually subtracted from the budget, not ignored;
-- whether selection is calibrated on the ACCEPTED region, and whether LTT multiple-testing
-  wraps the joint (tau, lambda, t_ood) search.
-Then propose the minimal synthetic-data unit tests that PROVE each guarantee (G-A exchangeable,
-G-B covariate, G-C label, G-D imperfect-detector), with exact expected numbers so I know if a
-test passes.
-```
-
-**D-6 · Results red-team** — §6.4
-```
-You are a skeptical senior co-author. Here are my results [PASTE tables/figures/setup]. Try to
-explain my positive result WITHOUT my method being correct: confounds, abstention inflation,
-leakage, lucky splits, weak baselines, cherry-picked alpha, dataset quirks, the base model
-just being worse on target, or the win coming from the backbone rather than the guarantee
-layer. Specifically attack: (i) is the "label-shift" win just covariate weighting in disguise?
-(ii) does the "integrated budget" actually hold when the OOD detector is imperfect, or did I
-test it only with a near-perfect detector? (iii) is validity bought by near-total abstention?
-For each alternative explanation, give the exact additional analysis or plot that rules it out.
-Then tell me which claims the data supports vs. which I'm overstating, and rewrite my central
-claim sentence to match the evidence.
-```
-
-**D-7 · Reviewer 2 simulation** — §7.5
-```
-You are three reviewers for [JOURNAL: Medical Image Analysis / IEEE TMI / npj Digital Medicine
-/ TMLR]: a conformal theorist, a clinical-ML practitioner, and a skeptical generalist. Here is
-my paper draft [PASTE]. Each writes: summary, strengths, weaknesses, questions, score, and the
-one change that would most raise it. The theorist checks the guarantee's assumptions, the
-combined covariate+label weight identifiability, the integrated-OOD-budget bound and its
-explicit constants, and whether the empirics demonstrate them. The clinician asks whether the
-abstention behavior is usable in a real workflow, whether the shifts are clinically realistic,
-and whether the subgroup audit is adequate. The generalist hunts for overclaiming, missing
-baselines, and whether two datasets suffice or breadth is needed. End with the top 3 revisions,
-ranked by impact.
-```
-
-**D-8 · Flagship gap-coverage audit** — §7.6
-```
-You are auditing whether my results close the original gap. The gap requires a single method
-that: (1) abstains; (2) gives a distribution-free guarantee on accepted cases; (3) holds under
-real covariate AND label/prevalence shift; (4) routes far-OOD to abstain WITH that step inside
-the guarantee; (5) is validated on real public medical shift data; (5') across multiple diverse
-modalities. Here are my results [PASTE]. For each of (1)-(5'), state SATISFIED / PARTIAL / NOT,
-with exact evidence and the exact residual gap. I deliberately scoped (5') to future work (two
-imaging datasets, deep) — confirm whether (1)-(5) are fully closed on those two, and write the
-most honest one-paragraph "what remains open" statement for my discussion (naming multi-modality
-breadth, arbitrary-shift limits, and BBSE identifiability as the open edges).
-```
+**Milestone B.** On a held-out **target** split with a *known synthetic covariate shift*, the **weighted** pipeline *measurably restores realized selective risk where the unweighted naive baseline degrades*: `R̂_w` under `ŵ_cov` moves measurably back toward its source level while the `ŵ ≡ 1` baseline's measured target risk visibly climbs. Because the shift is synthetic the oracle `w_cov` is known, so the milestone also checks `ŵ_cov` tracks the oracle. This is a measured restoration of risk, not a recovered guarantee — consistent with the impossibility of a finite-sample certificate once the weight is estimated ([method_note.md §7](docs/method_note.md); Yang, Kuchibhotla & Tchetgen Tchetgen 2024). Report the clip-induced abstention rate.
 
 ---
 
-# Appendix E — Repo tree reference
+### Stage C — label-shift weights *(M)*
+
+**Files.** `conformal/label_shift.py`. **Primary** prevalence estimator: **MLLS + BCTS** (recalibrate `f` with bias-corrected temperature scaling, then EM), per Alexandari et al. 2020 via the `abstention` package in `kundajelab/labelshiftexperiments`. **Baseline / diagnostic:** vanilla BBSE `ŵ_lab = Ĉ_S⁻¹ q̂_T` (Lipton et al. 2018). Combine the covariate and label weights via the per-`x` corrector `Ẑ(x)` — `ŵ(x,y) = ŵ_lab(y)·ŵ_cov(x)/Ẑ(x)`, **not** the naive product `ŵ_cov·ŵ_lab`, which double-counts (worked 2-class example in [method_note.md §3.3](docs/method_note.md)). Floor/ceiling `ŵ_lab ∈ [w_lab,min, w_lab,max]` after simplex projection.
+
+**Milestone C.** On a held-out target split with a *known synthetic prevalence shift* (class-conditionals held fixed), **label-aware weighting measurably improves realized risk over the covariate-only Stage-B pipeline**: `R̂_w` under the `Ẑ`-combined weight beats covariate-only, and the `Ẑ`-divide path matches the oracle `w_lab` while the naive-product path inflates by exactly `Z(x)` (the milestone reproduces the double-count and confirms `Ẑ` removes it). Report the **BBSE conditioning diagnostic** `κ(Ĉ_S)` and the **consistency check** `q̂_T` vs `Ĉ_S p̂_T` ([method_note.md §3.5](docs/method_note.md)) so the regime where the label estimate is least trustworthy is visible. This is a measured improvement over covariate-only — not a certificate, and not an identification of the combined case (the factorizable-shift premise is a modeling choice, [method_note.md §3.3](docs/method_note.md)/[§7](docs/method_note.md)).
+
+---
+
+### Stage D — OOD routing *(M)*
+
+**Files.** `ood/detector.py`. **Primary** detector: **plain tied-covariance Mahalanobis** (Lee et al. 2018) on the frozen embedding — built from `mueller-mp/maha-norm` but **adapted by removing the `++` L2-normalization** to recover the plain score, and deliberately dropping the FGSM input-perturbation and per-layer logistic-ensemble add-ons (they would couple the detector to the exposure set; [method_note.md §4.1](docs/method_note.md)). **Ablations:** kNN (`deeplearning-wisc/knn-ood`) and energy (Liu et al. 2020). Routing rule and the decoupling of `t_ood` (far-OOD guard) from `w_max` (near-OOD/variance guard) are in [method_note.md §4.2](docs/method_note.md).
+
+**Milestone D.** On the OOD-exposure set `O` and a *deliberately imperfect detector setting*, the screen **measurably reduces far-OOD leakage into the answered path**: report **AUROC / FPR95** of `o(x)` separating in-scope from `O`, and the **measured leakage** — the fraction of `O` scoring `≤ t̂_ood` — at the operating `t̂_ood` set to spend the `α_ood` budget on `O`. The milestone is that routing *reduces* the measured leakage relative to no screen, with `α_ood` reported as a **separately-measured operating budget**, never a certified additive term in any `α = α_acc + α_ood` union-bound. Distribution-free OOD detection is provably not learnable in the unrestricted setting (Fang et al. 2022; [method_note.md §4.4](docs/method_note.md)), which is exactly why this is a measured screen and the leakage is audited, not promised.
+
+---
+
+### Stage R — real-data headline *(M each dataset)*
+
+Run the **full pipeline** of [method_note.md §§3–5](docs/method_note.md) (MLLS+BCTS label weight, discriminator covariate weight, `Ẑ`-combine, OOD routing, LTT-wrapped `(τ,λ,t_ood)` grid, optional `D_tar^lab` scalar correction) against the **four pre-registered baselines** — naive split-conformal (`ŵ ≡ 1`), temperature-scaling-only, TRUECAM-style OOD detect-and-remove (`iamownt/TRUECAM`, run as the head-to-head empirical baseline), and BBSE label-weighting-only — on **both benchmarks**, across many splits and the pre-registered stress axes. Datasets, folds, baselines, and metrics are the authority of [preregistration.md §§2–6](docs/preregistration.md); recap only:
+
+- **CAMELYON17-WILDS** (`p-lambda/wilds`) — covariate-dominant cross-hospital shift; each hospital pair reported separately, never pooled ([preregistration.md §2.1](docs/preregistration.md)).
+- **CheXpert ↔ MIMIC-CXR** — mixed covariate + label cross-site shift; **both directions** as two deployments ([preregistration.md §2.2](docs/preregistration.md)). **Credentialing (Stanford AIMI; PhysioNet + CITI) is the long pole — start now** (see [§8](#8-milestone-timeline-2026-06-26--2026-10-05--35-months)).
+- **Far-OOD exposure set `O`** — off-modality / wrong-anatomy / non-medical probes, stated and swappable ([method_note.md §4.3](docs/method_note.md)).
+
+**Milestone R.** On **both** datasets, the shift-aware pipeline **maintains/improves realized selective risk on answered cases relative to the naive and TRUECAM-style baselines where they measurably break — measured, not certified**: report `R̂_T^accept` (Hájek, with its betting interval) and the coverage decomposition (abstain-on-weight / route-on-OOD / defer-on-uncertainty) on held-out target, alongside AURC and target ECE of `σ̃` ([preregistration.md §5.1](docs/preregistration.md)). The headline is a *measured comparison* — our measured residual risk/leakage is smaller than the baselines' under the same folds and frozen `f` — not a claim that our risk is held below a budget. Per [preregistration.md §6.4](docs/preregistration.md), operating points below the minimum-coverage floor are reported as **degenerate** (risk driven down only by answering almost nothing), so a favorable number cannot be manufactured by collapsing coverage. *If a result is unconvincing, iterate the method, not the plot;* a characterized failure regime is a feature of the failure-mode catalog ([method_note.md §3.6](docs/method_note.md)), not an embarrassment.
+
+> **Attribution discipline (keep the win attributable).** Milestone R is produced with the **standard backbone** as the base. Fancier nets (DDU / SNGP / deep ensemble) appear **only as ablations layered on top** — the realized-risk and auditability result is **base-model-agnostic**; a fancier net only moves *efficiency* (less abstention at equal measured risk), never validity. Building the core on a fancier net invites the *"is the win just the backbone?"* objection ([method_note.md §1.3](docs/method_note.md); [positioning_memo.md](docs/positioning_memo.md)).
+
+---
+
+### Stage S — subgroup / fairness audit *(M)*
+
+Re-compute the selective-prediction quantities **within each pre-registered subgroup** ([preregistration.md §5.3, §6.3](docs/preregistration.md); [method_note.md §6.2](docs/method_note.md)): per-site / scanner / hospital, and the clinically salient strata available per corpus (sex, age band, self-reported race where ethically collected, case-type strata). For each subgroup, on labeled target (`D_tar^lab` where available), report **selective risk** `R̂^accept_s` with its finite-sample (betting) interval, **abstention / defer rate**, and **OOD-routing and weight-routing rates**, plus the per-subgroup discriminator AUROC and `κ(Ĉ_S)`. Selective prediction can *magnify* disparities (Jones et al. 2021), and a subgroup that is disproportionately abstained on is being silently under-served even when its accepted risk looks low — the audit surfaces that coverage gap explicitly.
+
+**Milestone S.** Disparate selective risk and disparate abstention are made **visible and attributable** — to a scanner, a prevalence gap, or an ill-conditioned `Ĉ_S` — across subgroups on both benchmarks. This is **reporting with finite-sample intervals, not a fairness guarantee**: the subgroup audit is *not* wrapped in a new multiplicity-corrected certificate, and the LTT multiple-looks correction applies only to operating-threshold selection ([method_note.md §6.2](docs/method_note.md)), never to the subgroup audit. **`rohanhore/RLCP`** (randomly-localized conformal) is **optional** — if used, it strengthens toward *approximate* conditional coverage as a reported diagnostic, still not a per-subgroup guarantee.
+
+---
+
+### Code-review step *(S)*
+
+After Stage S, run a conformal-aware code review focused on: fold leakage between `D_cal`, `D_disc`, `D_bbse^src`, `D_tar`, `D_tar^lab`, `O`, and test (assert disjointness); off-by-one in the conformal quantile / RCPS `λ̂`; whether the WSR betting UCB is actually used in the weighted path (not silently falling back to a range bound); whether `ŵ_cov` and `ŵ_lab` are normalized and **combined via `Ẑ` rather than multiplied**; whether clipping bias is logged (clip fraction); whether selection is calibrated on the accepted region; and whether LTT wraps the joint `(τ, λ, t_ood)` grid. **All synthetic milestones (A–D) must still reproduce after fixes.** No milestone is a proof; each is a measured behavior the fix must not break.
+
+---
+
+### 5.1 Consolidated milestone checklist (honor in order)
+
+Build the layers **in order** as engineering milestones, each validated on synthetic data first, then on the two benchmarks. Each milestone is an *empirical* check on realized selective risk and measured leakage — it proves no bound; the synthetic checks are debugging infrastructure (localize which layer is wrong before stacking the next), not certificate gates.
+
+- [ ] **A** — selective layer runs and reproduces the risk–coverage trade-off on a held-out source split. (Exercises RCPS *under its own exchangeability assumption* — the one regime where its `(α,δ)` property applies.)
+- [ ] **B** — weighted pipeline measurably restores realized selective risk under known covariate shift where the unweighted naive baseline degrades. Check is *relative improvement*, not "restores ≤ α"; report the clip-induced abstention rate.
+- [ ] **C** — label-aware (`Ẑ`-combined) weighting measurably improves realized risk over covariate-only under prevalence shift; the `Ẑ`-divide path matches the oracle while the naive-product path inflates by `Z(x)`; BBSE conditioning `κ(Ĉ_S)` + the `q̂_T`-vs-`Ĉ_S p̂_T` consistency check reported. (No certificate; the combined weight is **not** identifiable from unlabeled target.)
+- [ ] **D** — OOD screen measurably reduces far-OOD leakage on `O` (AUROC / FPR95 + measured leakage at `t̂_ood` against `α_ood`). `α_acc` and `α_ood` are **two separately measured operating budgets**, never a certified additive split.
+- [ ] **R** — full pipeline maintains realized selective risk where naive + TRUECAM-style baselines measurably break, **measured on both datasets**, per source→target pair (never pooled), with the coverage decomposition and the minimum-coverage floor honored. Realized accepted risk is the Hájek `R̂_w` with its betting interval at `δ`.
+- [ ] **S** — subgroup selective risk / abstention / routing rates reported with finite-sample intervals; disparities made visible and attributable. Reporting, **not** a fairness guarantee.
+- [ ] **Attribution** — the headline is produced on the standard backbone; DDU/SNGP/deep-ensemble appear **only as ablations**; the measurement/auditability result is base-model-agnostic, the net moves only efficiency.
+- [ ] **Citation locators** — every cited guarantee resolves to the exact theorem/assumption it is attributed to; no guarantee is attributed to the deployed pipeline.
+- [ ] Code review complete; A–D still reproduce; fold-disjointness asserted.
+
+---
+
+### 5.2 Applied risk register
+
+Every row is a build/measurement risk for the applied pipeline. The theory risks of the old playbook (combined-weight identifiability *as a validity risk*, vacuous Hájek bound *as new-math-needed*, multiple-testing-invalidity *as a validity risk*) are **dropped** — they presupposed a certificate this paper does not claim.
+
+| Risk | Symptom | Mitigation | Where |
+|---|---|---|---|
+| **Data leakage across folds** | Suspiciously good target risk/coverage | Assert mutual disjointness of `D_cal`, `D_bbse^src`, `D_disc`, `D_tar`, `D_tar^lab`, `O`, test in code; code review | [method_note §1.7](docs/method_note.md); code-review step |
+| **Self-deception via abstention** | "Low risk" bought by answering almost nothing | Report coverage *with* risk; pre-registered minimum-coverage floor flags degenerate operating points | [preregistration §5.1, §6.4](docs/preregistration.md) |
+| **Dataset-access latency** | Stuck waiting on MIMIC/CheXpert approval | Credential on day one; lead the build with CAMELYON17 | [§8](#8-milestone-timeline-2026-06-26--2026-10-05--35-months); [preregistration §2](docs/preregistration.md) |
+| **Overclaiming (no new guarantee)** | "Valid under any shift" / "holds ≤ α" / "certified" creeps into prose | Every guarantee sentence names its method *and* its assumption; the words *certify/certified/guarantee* are banned for the deployed pipeline; reviewer-2 pass | [positioning_memo](docs/positioning_memo.md); [preregistration §8](docs/preregistration.md) |
+| **Breadth creep** | Chasing ECG/retina/2nd-pathology; nothing submitted | Two imaging benchmarks taken deep; multi-modality is explicit future work | [positioning_memo](docs/positioning_memo.md); [preregistration §2](docs/preregistration.md) |
+| **Calibration drift under shift** | Displayed posterior `σ̃(f(x))` miscalibrated on target; clinician-facing confidence stale; `Ẑ(x)` denominator biased | Recalibrate (temperature/Platt) on a held-out source fold; **measure** target ECE rather than assume it away; report drift with its sampling uncertainty | [method_note §3.5, §6.5, §7.6](docs/method_note.md); [preregistration §5.1](docs/preregistration.md) |
+| **OOD exposure-set non-representativeness** | `t̂_ood` / leakage estimate are artifacts of the particular `O` chosen | `O` is a *stated, swappable* exposure model; report exposure-set sensitivity (how `t̂_ood` and leakage move when `O` changes) | [method_note §4.3](docs/method_note.md); [preregistration §5.2](docs/preregistration.md) |
+| **Weight / label-shift estimation error** | Synthetic pass, real-data degradation | Clip + route the high-weight tail; MLLS+BCTS over vanilla BBSE under imbalance; report `n_eff`, `κ(Ĉ_S)`, clip-induced abstention rate; measure residual on `D_tar^lab` | [method_note §3.5, §1.7](docs/method_note.md); Milestones C, R |
+| **Backbone confound** | Gains attributed to a fancier net, not the pipeline | Standard backbone is the base; DDU/SNGP/ensemble are ablations only; the auditability result is base-model-agnostic | [method_note §1.3](docs/method_note.md); attribution discipline |
+
+---
+
+### 5.3 Repo map — applied methods only
+
+Each repo is used *as published* for the method it owns; its guarantee is a property of that method under its own assumptions (per [method_note §3.5](docs/method_note.md)). The theory-only repos (microsoft GLS, stanford-futuredata/SparseJointShift, isgibbs/DtACI, RLLS, GS-B³SE, FMAPLS) are **dropped** — they belonged to the abandoned temporal / exotic-estimator / GLS-identification tracks.
+
+| Component | Repo | Role | Defer to |
+|---|---|---|---|
+| Risk-control spine (RCPS) | [aangelopoulos/rcps](https://github.com/aangelopoulos/rcps) | concentration bounds + `λ̂` reference | [method_note §2.2, §3.5](docs/method_note.md); [prereg §5.1](docs/preregistration.md) |
+| Variance-adaptive UCB (WSR / betting) | [gostevehoward/confseq](https://github.com/gostevehoward/confseq) | `betting.py` hedged-capital bound (weights inflate risk-estimate variance) | [method_note §1.6, §2.2](docs/method_note.md) |
+| Multiple-looks correction (LTT) | [aangelopoulos/ltt](https://github.com/aangelopoulos/ltt) | plain multiplicity correction over the `(τ,λ,t_ood)` grid — **not** a new validity guarantee | [method_note §3.4](docs/method_note.md); [prereg §6.1](docs/preregistration.md) |
+| Less-conservative comparison (CRC) | [aangelopoulos/conformal-risk](https://github.com/aangelopoulos/conformal-risk) | expectation-control comparison row (no `δ` tail) | CRC kept as the less-conservative comparison row, [method_note §2.2, §3.5](docs/method_note.md); the repo is the canonical conformal-risk-control implementation and is an addition not enumerated in method_note §3.5's repo list |
+| Covariate weights | [ryantibs/conformal](https://github.com/ryantibs/conformal) | `weighted.quantile` convention | [method_note §3.5](docs/method_note.md) |
+| Label-shift estimator (primary) | [kundajelab/labelshiftexperiments](https://github.com/kundajelab/labelshiftexperiments) | the `abstention` package — MLLS+BCTS (Alexandari 2020); BBSE as baseline/diagnostic | [method_note §1.5, §3.5](docs/method_note.md); [prereg §4, §6.5](docs/preregistration.md) |
+| OOD detector (primary) | [mueller-mp/maha-norm](https://github.com/mueller-mp/maha-norm) | **adapted — remove the ++ L2-normalization** to recover the plain Lee et al. 2018 tied-covariance Mahalanobis score | [method_note §4.1](docs/method_note.md) |
+| OOD detector (ablation) | [deeplearning-wisc/knn-ood](https://github.com/deeplearning-wisc/knn-ood) | kNN OOD score | [method_note §4.1](docs/method_note.md) |
+| Data loaders | [p-lambda/wilds](https://github.com/p-lambda/wilds) | CAMELYON17-WILDS | [prereg §2.1](docs/preregistration.md) |
+| Head-to-head baseline | [iamownt/TRUECAM](https://github.com/iamownt/TRUECAM) | TRUECAM-style OOD detect-and-remove — the honest contrast | [prereg §4](docs/preregistration.md); [positioning_memo](docs/positioning_memo.md) |
+| Subgroup / local coverage (optional) | [rohanhore/RLCP](https://github.com/rohanhore/RLCP) | **optional** approx. conditional coverage; the subgroup audit is *reporting*, not a conditional-coverage guarantee | [method_note §6.2](docs/method_note.md); [prereg §5.3](docs/preregistration.md) |
+| Your repo | [Toepatella/calibrated-selective-prediction-clinical-shift](https://github.com/Toepatella/calibrated-selective-prediction-clinical-shift) | the build | — |
+
+---
+
+### 5.4 Repo tree
+
+> Reframed from the abandoned theory build: **`conformal/aci.py` is removed** (the temporal DtACI track is scope-cut for the applied paper — it appears in none of the three docs), and **`conformal/budget.py` is reframed** away from a certified `α = α_acc + α_ood` split toward bookkeeping for **two separately-measured operating budgets** ([method_note §1.6, §4.3](docs/method_note.md), [preregistration §6.2](docs/preregistration.md)). The `tests/` are **empirical-milestone tests** (the synthetic A–D checks of §5.1), not certificate gates.
 
 ```
 calibrated-selective-prediction-clinical-shift/
@@ -551,116 +287,332 @@ calibrated-selective-prediction-clinical-shift/
 ├── requirements.txt / env    # pinned deps + lockfile (incl. confseq, wilds)
 ├── configs/                  # one YAML per experiment (Hydra)
 ├── data/
-│   ├── camelyon17.py         # WILDS loaders + split manifest
-│   ├── cxr.py                # CheXpert/MIMIC loaders + harmonization
-│   └── splits/               # frozen index files (cal/test disjoint)
-├── models/                   # backbones, training, spectral-norm option
+│   ├── camelyon17.py         # WILDS loaders + frozen split manifest
+│   ├── cxr.py                # CheXpert/MIMIC loaders + label harmonization
+│   └── splits/               # frozen index files (all folds disjoint)
+├── models/                   # frozen backbones; cached logits + features (φ); recalibrator σ̃
 ├── ood/
-│   └── detector.py           # Mahalanobis++ / kNN on spectral-norm features
+│   └── detector.py           # plain Lee-2018 tied-cov Mahalanobis (primary) + kNN/energy ablation
 ├── conformal/
-│   ├── selective.py          # selection + accepted-region calibration
-│   ├── rcps.py               # RCPS + WSR (betting) bound + weighted path
-│   ├── crc.py                # CRC comparison backbone
-│   ├── ltt.py                # Learn-then-Test multiple-testing wrapper
-│   ├── weights.py            # domain discriminator + clipped covariate ratio
-│   ├── label_shift.py        # BBSE / EM target-proportion estimation
-│   ├── budget.py             # integrated alpha = alpha_acc + alpha_ood split
-│   └── aci.py                # DtACI adaptive conformal (Stage E)
-├── experiments/              # run scripts (method × dataset × seed)
+│   ├── selective.py          # selection gate g(x)=1[u≤τ]; accepted-region calibration   [Stage A]
+│   ├── rcps.py               # RCPS λ̂ + WSR (betting) UCB + weighted (Hájek) path        [Stage A/B]
+│   ├── crc.py                # CRC comparison row (expectation control, no δ)
+│   ├── ltt.py                # Learn-then-Test multiple-looks correction over (τ,λ,t_ood)
+│   ├── weights.py            # domain discriminator d(x); clipped ŵ_cov; w_max routing    [Stage B]
+│   ├── label_shift.py        # MLLS+BCTS (primary) + BBSE (diagnostic); Ẑ combine — NOT product [Stage C]
+│   └── budget.py             # α_acc / α_ood: two SEPARATELY-MEASURED operating budgets
+│                             #   (NOT a certified additive split)
+├── experiments/              # run scripts (method × dataset × seed); pre-registered stress axes
 ├── analysis/
-│   ├── metrics.py            # risk, coverage, AURC, ECE, OOD AUROC, subgroup
-│   ├── figures.py            # headline + integrated-budget + frontier + change-point
+│   ├── metrics.py            # realized selective risk + betting CI; coverage decomposition; AURC;
+│   │                         #   ECE; OOD AUROC/FPR95 + leakage vs α_ood; subgroup audit;
+│   │                         #   reliability diagnostics (n_eff, κ(Ĉ_S), q̂_T-vs-Ĉ_S p̂_T, clip rate)
+│   ├── figures.py            # one script regenerates every figure from logs
 │   └── competitor_matrix.csv
-├── tests/                    # synthetic gates G-A..G-E (pytest)
-├── docs/                     # positioning_memo, method_note, design, preregistration
+├── tests/                    # EMPIRICAL milestone tests A–D (pytest) — measured behaviors,
+│                             #   NOT bound-proving gates; no changepoint test
+├── docs/                     # method_note · positioning_memo · preregistration (authoritative)
 └── paper/                    # manuscript + figures
 ```
 
----
-
-# Appendix F — Notation & key formulas (quick reference)
-
-**Notation:** `P_S,P_T` source/target · `f` frozen base model · `ŷ(x)` prediction · `u(x)` uncertainty · `g(x)=1[u(x)≤τ]` selection · `ℓ∈[0,1]` loss · `w_cov(x)=p_T(x)/p_S(x)` covariate ratio · `w_lab(y)=p_T(y)/p_S(y)` label ratio · `w(x,y)` combined weight · `o(x)` OOD score · `τ,λ,t_ood` thresholds · `α=α_acc+α_ood` budget · `δ` RCPS confidence · `m` target sample size.
-
-- **Split-conformal quantile:** `q̂ = ⌈(n+1)(1−α)⌉`-th smallest calibration score. Marginal coverage ≥ `1−α` under exchangeability.
-- **CRC:** choose `λ̂` so `E[ℓ(λ̂)] ≤ α` (monotone bounded loss; expectation includes the calibration draw).
-- **RCPS:** `λ̂ = inf{λ : UCB_δ(R(λ′)) < α ∀ λ′≥λ}` ⇒ `P(R(λ̂) ≤ α) ≥ 1−δ`. Use the **WSR betting UCB** (tighter than Hoeffding–Bentkus, variance-adaptive — matters under weighting).
-- **Weighted conformal (covariate):** reweight calibration point `i` by `w_cov(x_i)/Σ_j w_cov(x_j)` (+ test-point term); transports coverage under covariate shift.
-- **Density ratio from a discriminator:** `w_cov(x) ∝ d(x)/(1−d(x))`, `d=`P(target|x); clip at `w_max`.
-- **BBSE (label shift):** estimate `p̂_T(y)` by solving `Ĉ_S · p̂_T(y) = q̂_T`, where `Ĉ_S` = source confusion matrix and `q̂_T` = distribution of `f`'s predictions on the target sample; then `w_lab(y)=p̂_T(y)/p_S(y)`.
-- **Combined weight:** under the stated shift model, fold `w_cov` and `w_lab` into one `w(x,y)` — derive it, don't multiply naïvely (double-counts when both shifts coexist).
-- **Selective risk / coverage:** `risk = E[ℓ | g=1]`, `coverage = P(g=1)`; risk–coverage curve / AURC summarizes the tradeoff.
-- **Integrated target guarantee:** `E_{P_T}[ ℓ(Y,ŷ(X)) | g(X)=1, o(X)≤t_ood ] ≤ α_acc`, with residual far-OOD leakage bounded by `α_ood`, so answered-case risk `≤ α = α_acc + α_ood`.
+*Notation, weights, thresholds, and budgets are the single source of truth in [method_note.md §1](docs/method_note.md) (and its §1.8 quick-reference table); positioning is [positioning_memo.md](docs/positioning_memo.md); the evaluation protocol is [preregistration.md](docs/preregistration.md). This build section defers to them rather than restating.*
 
 ---
 
-# Appendix G — Environment & command cheat-sheet
+## 6. Run, ablate, report (deep, on the two benchmarks)
+
+Everything in this section is **measured on held-out target data and reported with its sampling uncertainty** — no result here is a certificate. The datasets, source→target pairs, baselines, metrics, subgroups, and stress axes are fixed in advance in the [preregistration](docs/preregistration.md); this section is the run/ablate/report discipline, not a redefinition of them. The honesty rule carries through every table: a guarantee sentence names the method it belongs to and the assumption that method needs (RCPS `(α,δ)` under exchangeability; weighted-conformal `1−α` *marginal* coverage under pure covariate shift with the oracle ratio; BBSE/MLLS *consistency* under label shift), and under shift we report the realized number, never a recovered guarantee. The two operating budgets `α_acc` and `α_ood` are **separately measured** — their sum is a reporting convenience, never a union-bound certificate ([method_note §1.6](docs/method_note.md), [prereg §6.2](docs/preregistration.md)).
+
+The pipeline under test is the full method of [method_note §§3–5](docs/method_note.md) (MLLS+BCTS label weight, discriminator covariate weight, `Ẑ`-combine, OOD routing, LTT-wrapped `(τ,λ,t_ood)` grid, optional `D_tar^lab` scalar correction), run against the four pre-registered baselines ([prereg §4](docs/preregistration.md)): naive split-conformal (`ŵ≡1`), temperature-scaling-only, the TRUECAM-style detect-and-remove pipeline, and BBSE-label-weighting-only.
+
+### 6.1 The ablation set (one fixed grid, regenerated from logs)
+
+Each ablation changes **one** component and re-measures the [prereg §5](docs/preregistration.md) metrics on the same folds, same frozen `f`, same target test set, so any movement is attributable to that component. Tabulate all of these from logged runs (one script → every table/figure):
+
+- **OOD detector `{Mahalanobis (primary), energy, kNN}`** ([method_note §4.1](docs/method_note.md)). Report OOD AUROC / FPR95 separating in-scope from the exposure set `O`, and the measured far-OOD leakage at the operating `t̂_ood`, for each detector. The routing logic is identical across detectors; this isolates the screen's discriminative power, not a validity claim. Deploy the **plain** tied-covariance Mahalanobis score (the `maha-norm` repo with the `++` L2-normalization removed), and deliberately omit the FGSM-perturbation and per-layer logistic-ensemble add-ons so the detector stays OOD-agnostic and `O` stays swappable.
+- **Label-shift estimator `{MLLS+BCTS (primary), BBSE (baseline/diagnostic)}`** ([method_note §3.5](docs/method_note.md), [prereg §6.5](docs/preregistration.md)). This is an estimator comparison, **not** a "validity-flat / efficiency-moves" certificate ablation: report the realized selective risk, the prevalence-correction error on `D_tar^lab`, and the BBSE conditioning `κ(Ĉ_S)`. The docs fix exactly these two estimators — do not reach for a fancier label-shift estimator from the literature as a substitute.
+- **Covariate-only vs combined weight.** Covariate-only (`ŵ_cov`) versus the combined `ŵ(x,y) = ŵ_lab(y)·ŵ_cov(x)/Ẑ(x)` ([method_note §3.3](docs/method_note.md)). This is where the `Ẑ`-divide (not the naïve product) earns its keep on the mixed benchmark; report realized risk and coverage under each, with the per-pair discriminator AUROC as the shift-severity context.
+- **`w_max` and target-size `m` sensitivity.** Sweep the routing cap `w_max` and the unlabeled-target size `m` over their fixed grids ([prereg §6.6](docs/preregistration.md)); report realized risk, coverage, clip-induced abstention rate, and `n_eff` at each cell. Small `m` and aggressive clipping are where the weighted estimate gets unreliable — the point is to **show** where, not to hide it.
+- **Base-model efficiency frontier `{standard, DDU/SNGP, deep ensemble}`** — an **efficiency comparison, not a validity claim** ([method_note §1.3](docs/method_note.md); attribution discipline below). The standard backbone is the deployed base; DDU/SNGP and deep ensembles appear **only** here. The frontier plot shows that a fancier net buys *efficiency* (less abstention at the same realized risk), while the measured-risk/auditability behavior is base-model-agnostic — so the headline win is attributable to the pipeline, not the net. State it as exactly that, never as "validity flat."
+
+**Attribution discipline (keep).** Building the headline on SNGP would hand a reviewer the kill — *"is the win just the backbone?"* The standard backbone is the foundation; every fancier net is an ablation layered on top. The reported reliability/auditability result does not depend on the net; the net only moves the efficiency frontier.
+
+### 6.2 Confound checks (rule out the cheap explanations)
+
+For each positive result, run the analysis that rules out the boring explanation, per [prereg §5–6](docs/preregistration.md):
+
+- **Coverage *with* risk — low risk must not be bought by near-total abstention.** Always report realized selective risk *alongside* coverage and its three-way routing decomposition (abstain-on-weight, route-on-OOD, defer-on-uncertainty; [method_note §5.2](docs/method_note.md)). Enforce the pre-registered **minimum-coverage floor** `coverage_min` ([prereg §6.4](docs/preregistration.md)): any operating point below it is reported as **degenerate**, not as a favorable risk number.
+- **Weight-error stress.** Deliberately degrade the domain discriminator and re-measure; report how realized risk and `n_eff` move as the covariate weights get noisier.
+- **Small-`m` breakdown.** Drive `m` down its grid until the weighted estimate becomes unreliable; report the regime where `n_eff` collapses and the realized risk estimate destabilizes (flagged via `n_eff`, never silently averaged in).
+- **BBSE-error stress.** Push `Ĉ_S` toward ill-conditioning (weak base model, rare/hard classes) and re-measure; report `κ(Ĉ_S)`, worst-class error, and the `q̂_T`-vs-`Ĉ_S p̂_T` consistency check ([method_note §3.5](docs/method_note.md)) as the label-shift correction degrades.
+
+### 6.3 Find — and report — a shift where it degrades
+
+A **characterized failure boundary is a feature of a measure-and-report paper, not an embarrassment.** Use the pre-registered stress axes ([prereg §6.6](docs/preregistration.md)) — small `m`, the hardest CAMELYON17 hospital pair, both CheXpert↔MIMIC directions, the target-prevalence sweep — to locate where the realized selective risk degrades or the combined-shift residual on `D_tar^lab` grows large. Then report it as the empirical failure-mode catalog ([method_note §3.6](docs/method_note.md)): the discriminator-AUROC level at which anti-causal `p(x∣y)`-invariance visibly breaks, the `κ(Ĉ_S)` at which the label correction misfires on minority classes, and the exposure-set hardness at which OOD leakage climbs. This catalog *is* the auditability contribution — it shows where the correction is least trustworthy rather than papering over it.
+
+**Done when** every table and figure regenerates from logged runs by one script, the minimum-coverage floor and the reliability diagnostics (`n_eff`, `κ(Ĉ_S)`, per-pair discriminator AUROC, clip-induced abstention rate) accompany every number, and the top alternative explanations from §6.2 are ruled out with specific plots.
+
+---
+
+## 7. Write the paper
+
+**Venue.** Springer *Discover Computing*, the **"Intelligent Medicine: Machine Learning and Explainable AI for Next-Generation Healthcare"** collection (open access; **deadline 2026-10-05**). The collection's centre of gravity is **explainability and trustworthy / auditable ML** for clinical decision support — match the template now and write to that emphasis. The fit is direct and is argued in [positioning_memo "Venue fit"](docs/positioning_memo.md): the deliverable is a measured, subgroup-auditable account of trustworthiness under realistic clinical shift, with no overclaimed guarantee.
+
+**Lead the paper with trustworthy, auditable selective prediction under shift — *not* "guarantee xor shift-robustness."** There is no maintained distribution-free guarantee to claim and no gap-finder framing to revive. The one-sentence contribution is the [positioning_memo](docs/positioning_memo.md) sentence: an applied, auditable selective-prediction pipeline assembled from existing methods whose contribution is a **measurement / auditability discipline and a clinician-facing trust interface**, not a new statistical guarantee.
+
+### 7.1 Manuscript structure (no theory section)
+
+1. **Introduction** — the clinical trust gap (models that answer every case, silently, under deployment shift); the one-sentence contribution; and the **honesty stance up front** — we compose published methods, claim no new guarantee, and *measure and report* degradation under shift, anchored by the two impossibility results ([method_note §7.1](docs/method_note.md): Fang et al. 2022 on OOD non-learnability; Yang, Kuchibhotla & Tchetgen Tchetgen 2024 on no finite-sample conditional coverage under estimated covariate weights) that make measure-and-report the only honest stance.
+2. **Related work + competitor matrix** — one row per trustworthy-selective-prediction work, columns: abstains? · distribution-free property and its assumption · covariate / label shift handled? · OOD handling · real medical shift data? The honest contrast with **TRUECAM** ([positioning_memo](docs/positioning_memo.md)): it restores validity by detecting and removing OOD inputs and does not claim a maintained distribution-free guarantee in deployment; we beat it only by **measuring and reporting** the residual leakage it leaves unquantified, not with a stronger guarantee.
+3. **Methods** — point to [method_note.md](docs/method_note.md); do **not** restate the spine or re-derive notation. Summarize the pipeline (selective gate → shift-aware weighted calibration → OOD screen → integrated decision rule → audit layer) and the one estimation step worth showing inline: the combine-by-`Ẑ` correction (`ŵ(x,y)=ŵ_lab(y)·ŵ_cov(x)/Ẑ(x)`, not the product) with the worked 2-class double-count example ([method_note §3.3](docs/method_note.md)).
+4. **Experimental setup** — point to [preregistration.md](docs/preregistration.md); briefly recap the two benchmarks (CAMELYON17-WILDS covariate-dominant, per hospital pair; CheXpert↔MIMIC mixed, both directions), the four baselines, the fold-disjointness discipline, the shift-type diagnostic (per-pair discriminator AUROC with the fixed-before-results cutoff `τ_disc`, a **regime tag, not a guarantee gate**), and the fixed operating-point grid + budgets + stress axes.
+5. **Results** — the empirical spine, in order:
+   - **Naive breaks.** The `ŵ≡1` split-conformal baseline's realized target risk degrades under shift (it carries RCPS's property only under exchangeability, which the deployment breaks).
+   - **Shift-aware holds up under measurement.** The full pipeline's realized selective risk and coverage are better-controlled than the baselines — stated as *measured improvement*, never "risk held at ≤ α."
+   - **OOD screen measurably reduces leakage.** Measured far-OOD leakage on `O` vs the TRUECAM-style detect-and-remove baseline, with exposure-set sensitivity.
+   - **Subgroup / fairness audit.** Per-subgroup selective risk, abstention, and routing rates with finite-sample intervals ([method_note §6.2](docs/method_note.md)) — reporting, not a fairness guarantee.
+   - **Operating-envelope / failure boundary.** The §6.3 characterized boundary: where, on the stress axes, the correction degrades.
+6. **Clinician-facing auditability / interpretability** — the explainability hook of the venue, drawn from [method_note §6](docs/method_note.md): the per-case calibrated risk panel (recalibrated posterior `σ̃`, weight-context representativeness chip `ŵ(x,ŷ)`, cohort `n_eff` flag), the subgroup audit, and the explicit OOD + shift-regime flags. Frame it as *explainability via auditability* — the interface explains where and why the model declines and where the shift correction is least trustworthy, an interpretable account of the model's own reliability at the point of care.
+7. **Honest limitations / discussion** — point to [method_note §7](docs/method_note.md): per-component assumptions and where each breaks; the cleanest regime (pure label shift, fewest assumptions) named as the cleanest *evaluation* regime, not a corollary; and the genuinely open edges — combined-shift non-identifiability from unlabeled target, the untestable exposure-set transfer assumption behind OOD leakage, and source-fit recalibration drift — plus **multi-modality breadth as honestly-scoped future work** ([positioning_memo](docs/positioning_memo.md): two imaging benchmarks, depth over breadth). Do **not** frame the open edges as "closing a 5-condition gap."
+8. **Reproducibility** — pinned env, configs, seeds, one script per figure; a data-access README (CheXpert/MIMIC cannot be redistributed — ship splits + credentialing steps); Zenodo DOI in the paper.
+
+### 7.2 Figures
+
+Headline realized selective-risk vs coverage under covariate+label shift (full pipeline vs the four baselines, with the minimum-coverage floor marked); measured OOD leakage vs the TRUECAM-style baseline with exposure-set sensitivity; risk–coverage / AURC curves; the **base-model efficiency frontier** (`{standard, DDU/SNGP, ensemble}` — labeled "efficiency moves, auditability is base-model-agnostic," never "validity flat"); the subgroup audit table with finite-sample intervals; the shift-regime / per-pair discriminator-AUROC diagnostic; and an annotated screenshot of the clinician-facing per-case panel (the explainability figure). **Cut** the DtACI change-point figure and any figure that would assert a combined or additive budget bound "holds" — both belong to dropped scope.
+
+### 7.3 Prose discipline (the top priority)
+
+Every guarantee sentence names its **method and its assumption**; no guarantee is attributed to the pipeline as a whole. Never write "risk is held at ≤ α" or "certified / guaranteed" of the deployed pipeline — we *want* `R_T^accept` low, *measure* it, and *report* the degradation ([positioning_memo](docs/positioning_memo.md) bans "certify/certified/guarantee" for the deployed system). `δ` is the confidence of a *reported interval*, not a PAC promise about the pipeline. Lead with auditability; quote TRUECAM's own "cannot be guaranteed in deployment" as the gap you *measure and report*, not one you out-guarantee.
+
+### 7.4 Reviewer pass and release
+
+- **Reviewer simulation** — three reviewers (a conformal/UQ-literate reader, a clinical-ML practitioner, a skeptical generalist). The UQ reviewer checks that every guarantee is correctly attributed to its method under its assumption and that no certificate is smuggled in; the clinician checks the abstention/deferral behavior and the audit panel are usable and the shifts clinically realistic; the generalist hunts for overclaiming and whether two imaging benchmarks suffice (the rebuttal: depth over breadth, with the cheapest credible extra modality named as future work). Apply the top revisions.
+- **Honest "what remains open"** — write the one-paragraph open-edges statement from [method_note §7](docs/method_note.md): combined-shift non-identifiability, OOD-exposure-set transfer, recalibration drift, and multi-modality breadth — as named open edges, not bugs.
+- **Release** — pinned env + lockfile, Hydra configs, seeds, one script regenerating every figure from logged runs; data-access README; archived Zenodo DOI cited in the manuscript.
+
+---
+
+## 8. Milestone timeline (2026-06-26 → 2026-10-05, ~3.5 months)
+
+The **long pole is data credentialing** — PhysioNet/CITI for MIMIC-CXR and Stanford AIMI registration for CheXpert need human approval. **Start credentialing on day one.** CAMELYON17-WILDS is open-access and unblocks the build immediately, so the engineering ladder runs in parallel with credentialing.
+
+| Window | Milestone | Notes |
+|---|---|---|
+| **Wk 0–1** (Jun 26 – Jul 9) | **Unblock data + scaffold.** Submit MIMIC/PhysioNet+CITI and CheXpert/AIMI credentialing *immediately*. Pull CAMELYON17-WILDS. Scaffold the repo (§5.4), pin the env, wire configs/seeds + fold-disjointness asserts, cache frozen-`f` features once so calibration reruns in seconds on CPU. **Stage A** + **Milestone A**. | Credentialing clock starts now; CAMELYON17 carries the build while it runs. |
+| **Wk 1–4** (Jul 9 – Aug 6) | **Build the pipeline as engineering milestones.** In order: selective RCPS on the accepted region → covariate weights → label-shift weights (MLLS+BCTS, BBSE baseline) → `Ẑ`-combine → OOD screen. **Stages B, C, D** + Milestones B/C/D on synthetic shift, incl. the unreliability diagnostics. Lock the fixed-before-results grid/budgets/subgroups per [preregistration §6](docs/preregistration.md). | Each layer validated on synthetic data as an **empirical check** — *does the shift-aware pipeline maintain/improve realized selective risk vs naive; does the OOD screen measurably reduce leakage* — **not** a proof a bound holds. Never stack past a layer that fails its check. |
+| **Wk 4–5** (Aug 6 – Aug 20) | **CAMELYON17 headline + code review.** **Stage R** on CAMELYON17 (full pipeline + 4 baselines per hospital pair, many splits, stress axes); confound checks (§6.2); fix leakage / off-by-one / clip-bias. Attribution ablation frontier. By now CXR credentials should be landing. | First real-data result; covariate-dominant benchmark. |
+| **Wk 5–7** (Aug 20 – Sep 3) | **CheXpert↔MIMIC headline (both directions).** **Stage R** on the mixed benchmark; full ablation set (§6.1): OOD `{Maha, energy, kNN}`, estimator `{MLLS+BCTS, BBSE}`, covariate-only vs combined, `w_max`/`m` sweeps, base-model efficiency frontier. Run the prevalence sweep and locate the §6.3 failure boundary. **Stage S** subgroup audit. | Mixed-shift benchmark; the deepest experimental block. CXR access must land by early-Sep. |
+| **Wk 7–9** (Sep 3 – Sep 17) | **Auditability layer + all figures.** Build the clinician-facing panel ([method_note §6](docs/method_note.md)); subgroup/fairness audit with intervals; failure-mode catalog; regenerate every figure/table from logs by one script. | The explainability hook for the venue. |
+| **Wk 9–10** (Sep 17 – Sep 24) | **Write the full draft** (§7 structure). Methods/setup point to the three docs; results + auditability + honest limitations are the new prose. | Prose discipline: every guarantee sentence names its method + assumption. |
+| **Wk 10–11** (Sep 24 – Oct 1) | **Reviewer pass + revisions.** Three-reviewer simulation; apply top revisions; write the open-edges paragraph; finalize the reproducible release + Zenodo DOI. | |
+| **Wk 11** (Oct 1 – **Oct 5**) | **Buffer + submit.** Final formatting to the Discover Computing template, reference check, submit. | ~4-day buffer absorbs slippage. |
+
+> **Compute note (single GPU).** Cache `f`'s logits + features once (Stage R prep); the conformal / weight / BBSE / budget math then reruns on the cached numbers on CPU in **seconds**. Deep-ensemble *ablations* are `K` sequential trainings — schedule overnight. One script regenerates every figure from logged runs.
+
+> **Risk-managed contingencies.** If CXR credentialing slips past Wk 4, lead the submission with the **CAMELYON17** headline (Stage R/S complete there) and present CheXpert↔MIMIC as the depth-second benchmark as soon as access lands — the build and ablation harness are dataset-agnostic, so the second benchmark drops in. If the combined-shift residual on `D_tar^lab` proves too noisy on a pair, report that pair **uncorrected** ([method_note §3.4 step 3](docs/method_note.md)) rather than delaying. Multi-modality breadth (ECG / retina / 2nd-pathology / derm) remains explicit, honestly-scoped **future work** ([positioning_memo](docs/positioning_memo.md), [preregistration §2](docs/preregistration.md)), never a v1 obligation; chasing a third modality is the classic way to arrive at the deadline with nothing submitted.
+
+---
+
+# Appendices
+
+> Reference material for the applied build. The three docs are authoritative and these appendices only point to them, never restate or override them: the method spine and **all notation** live in [docs/method_note.md](docs/method_note.md) (§1 is the single source of truth for every symbol, weight, threshold, and budget); the one-sentence contribution and venue fit in [docs/positioning_memo.md](docs/positioning_memo.md); the evaluation protocol in [docs/preregistration.md](docs/preregistration.md). **Honesty discipline throughout:** we claim *no new guarantee*; each method's guarantee is cited as a property *of that method under its own assumptions*; under realistic clinical shift we **measure and report** degradation, never certify it.
+
+---
+
+## Appendix A — Background: the ideas this project composes
+
+> *You have already built these as toy notebooks (`phase0_learning.ipynb`, steps 0.1.1–0.1.6), so treat this as a corrected reference, not a blocker. The one framing correction versus older drafts: the **distribution-free guarantee is not the contribution**. Each guarantee below belongs to its own method under its own assumptions; clinical shift breaks those assumptions, and **the contribution is the auditable composition + the clinician-facing trust interface + the measure-and-report discipline**, not a guarantee that survives shift.*
+
+### A.1 The math and ML you actually need
+- **Function `f(x)`** — put an image in, get logits out; softmax squashes them to probabilities; the penultimate vector `φ(x)` (features) is what the OOD detector and domain discriminator act on.
+- **Conditional probability `P(A∣B)`** — "how often `A`, *among* the `B` cases." The whole pipeline is about risk *among the cases the model chose to answer*.
+- **`P_S` vs `P_T`** — the data pattern at the **s**ource (calibration) vs **t**arget (deployment) hospital. The premise calibrated on `P_S` may not hold on `P_T`; we measure how much it degrades.
+- **Train / calibration / test, no leakage** — train fits `f`; *calibration* sets thresholds; test is untouched. No leakage between folds is sacred and is asserted in code ([method_note §1.7](docs/method_note.md)).
+- **`α`** = tolerated error rate · **`δ`** = confidence of a *reported interval* (not a PAC promise about the pipeline) · **"distribution-free"** = a method-level property that holds regardless of data shape *under that method's assumptions*.
+
+### A.2 The five ideas, with corrected framing
+1. **Conformal / risk control (CRC, RCPS, LTT) — the honesty thermostat.** Convert a shaky score into an operating threshold with a calibration-time property. **CRC** controls the *expected* loss; **RCPS** gives `(α,δ)` PAC control; **LTT** is a multiple-looks correction for tuning several knobs. *Each property holds only under cal/test **exchangeability**.* It is **not** maintained under shift — we measure realized risk on target instead.
+2. **Selective prediction — knowing when to say "I don't know."** A threshold `τ` on uncertainty answers the confident cases and defers the rest to a clinician. Selection biases the answered subset, so the controlling threshold is calibrated *on the accepted region* ([method_note §2](docs/method_note.md)).
+3. **Distribution shift (two flavors) — the new-hospital problem.** *Covariate shift:* `p(x)` moves → reweight by a density ratio `ŵ_cov(x)` from a source-vs-target discriminator. *Label/prevalence shift:* `p(y)` moves → estimate target proportions with **MLLS+BCTS** (calibrate first, then EM) and reweight by `ŵ_lab(y)`. Combining them is **not** a product: divide by the per-`x` corrector `Ẑ(x)` ([method_note §3.3](docs/method_note.md)). These corrections are *reported, not guaranteed*: once the weight is estimated only asymptotic / doubly-robust validity is available (Yang–Kuchibhotla–Tchetgen Tchetgen 2024), and combined shift is not identifiable from unlabeled target alone.
+4. **OOD detection + distance awareness — "not even the right kind of input."** A feature-space distance (plain Mahalanobis primary, kNN ablation) routes inputs too strange to score to a human. Optional spectral normalization (an efficiency-side ablation, not a deployed requirement) can make feature-distance more meaningful; the primary detector is the plain tied-covariance Mahalanobis score ([method_note §4.1](docs/method_note.md)). This is a **measured screen** with a reported leakage rate, **not** an in-the-guarantee step — distribution-free OOD detection is provably *not learnable* in the unrestricted setting (Fang et al. 2022).
+5. **Auditability + the trust interface — the actual contribution.** Composing the above with strict fold-disjointness, self-normalized (Hájek) weighted risk, a variance-adaptive bound, and a fixed set of reliability diagnostics (`n_eff`, `κ(Ĉ_S)`, the `q̂_T`-vs-`Ĉ_S p̂_T` check, per-pair discriminator AUROC) — and surfacing the residual degradation per case and per subgroup at the point of care. *This composition + interface + measure-and-report discipline is the contribution* ([positioning_memo](docs/positioning_memo.md)).
+
+### A.3 The project in one paragraph (corrected)
+A frozen classifier gives scores and features. **Selective prediction** decides answer-vs-defer. **Conformal/RCPS** set the operating threshold on calibration. **Covariate + label weighting** correct the case-mix for a new hospital; **OOD routing** sends inputs too strange to score to a human. The contribution is doing all of this *as one auditable pipeline whose residual shift-induced degradation is measured and reported* — overall, by subgroup, and per case — **not** a guarantee that provably survives shift. The two named regimes are stated honestly: pure label shift is the cleanest *evaluation* regime (fewest assumptions), the combined covariate+label case is the stress extension whose residual is measured on the small labeled slice `D_tar^lab`.
+
+### A.4 Optional skill-ramp (search for current free versions)
+3Blue1Brown / StatQuest (math intuition); Angelopoulos & Bates, *A Gentle Introduction to Conformal Prediction* (the on-ramp); Tibshirani et al. 2019 (weighted conformal); Lipton et al. 2018 (BBSE); Bates et al. 2021 (RCPS); Waudby-Smith & Ramdas 2024 (betting bound).
+
+---
+
+## Appendix B — Applied reading list (methods actually used)
+
+> *Restricted to what the applied pipeline composes, plus the two impossibility results that anchor the measure-and-report stance and the trustworthy-ML refs that fit the venue. Theory-only / exotic / temporal references that the applied pipeline does **not** use are collected in one note at the end (B.7) so they do not crowd the working list.*
+
+**B.1 Conformal & risk control (the operating-threshold layer)**
+- Vovk, Gammerman, Shafer — *Algorithmic Learning in a Random World* (2005) — foundations.
+- Angelopoulos & Bates — *A Gentle Introduction to Conformal Prediction and Distribution-Free UQ* — the on-ramp.
+- Bates, Angelopoulos, Lei, Malik, Jordan — *Distribution-Free, Risk-Controlling Prediction Sets (RCPS)* (JACM 2021, [arXiv:2101.02703](https://arxiv.org/abs/2101.02703)) — `(α,δ)` control **under cal/test exchangeability**; the cited selective-risk property.
+- Angelopoulos, Bates, Fisch, Lei, Schuster — *Conformal Risk Control (CRC)* (ICLR 2024, [arXiv:2208.02814](https://arxiv.org/abs/2208.02814)) — expectation control; the less-conservative comparison row.
+- Angelopoulos, Bates, Candès, Jordan, Lei — *Learn then Test (LTT)* (AOAS 2025, [arXiv:2110.01052](https://arxiv.org/abs/2110.01052)) — used purely as a **multiple-looks correction** over the `(τ,λ,t_ood)` grid; no new validity claim.
+- Waudby-Smith & Ramdas — *Estimating Means of Bounded Random Variables by Betting* (JRSS-B 2024, [arXiv:2010.09686](https://arxiv.org/abs/2010.09686)) — the variance-adaptive WSR/hedged-capital UCB used for the reported interval.
+
+**B.2 Conformal under shift (the covariate/label corrections)**
+- Tibshirani, Foygel Barber, Candès, Ramdas — *Conformal Prediction Under Covariate Shift* (NeurIPS 2019, [arXiv:1904.06019](https://arxiv.org/abs/1904.06019)) — weighted conformal; `1−α` **marginal** coverage **only under pure covariate shift with the oracle likelihood ratio**.
+- Podkopaev & Ramdas — *Distribution-Free UQ for Classification Under Label Shift* (UAI 2021, [arXiv:2103.03323](https://arxiv.org/abs/2103.03323)) — the conformal-native label-shift treatment.
+
+**B.3 Label-shift estimation (the `ŵ_lab(y)` module)**
+- Alexandari, Kundaje, Shrikumar — *MLLS with Bias-Corrected Calibration is Hard-To-Beat at Label Shift Adaptation* (ICML 2020, [arXiv:1901.06852](https://arxiv.org/abs/1901.06852)) — **the primary prevalence estimator**; calibrate first (BCTS), then EM.
+- Lipton, Wang, Smola — *Detecting and Correcting for Label Shift (BBSE)* (ICML 2018, [arXiv:1802.03916](https://arxiv.org/abs/1802.03916)) — the **baseline / consistency diagnostic** estimator; consistent under label shift with invertible `Ĉ_S`.
+- Garg, Wu, Balakrishnan, Lipton — *A Unified View of Label Shift Estimation* (NeurIPS 2020, [arXiv:2003.07554](https://arxiv.org/abs/2003.07554)) — MLLS ≡ BBSE under different calibration; the shared invertibility identifiability condition.
+
+**B.4 Selective prediction & OOD detection**
+- Geifman & El-Yaniv — *Selective Classification for DNNs* (NeurIPS 2017) and *SelectiveNet* (ICML 2019, [arXiv:1901.09192](https://arxiv.org/abs/1901.09192)) — the selection head; risk control comes from the calibration layer, not the architecture.
+- Jones et al. — *Selective Classification Can Magnify Disparities Across Groups* (ICLR 2021, [arXiv:2102.11203](https://arxiv.org/abs/2102.11203)) — the subgroup-audit motivation.
+- Lee et al. — *Mahalanobis OOD* (NeurIPS 2018, [arXiv:1807.03888](https://arxiv.org/abs/1807.03888)) — the **plain tied-covariance** score deployed as primary detector.
+- Sun et al. — *kNN OOD* (ICML 2022, [arXiv:2204.06507](https://arxiv.org/abs/2204.06507)) — the ablation detector.
+- Liu et al. — *Energy-based OOD Detection* (NeurIPS 2020, [arXiv:2010.03759](https://arxiv.org/abs/2010.03759)) — energy-score ablation.
+
+**B.5 The two impossibility results (why we measure, not promise)**
+- Fang, Li, Lu, Dong, Han, Liu — *Is Out-of-Distribution Detection Learnable?* (NeurIPS 2022, [arXiv:2210.14707](https://arxiv.org/abs/2210.14707)) — **OOD detection is not distribution-free learnable** in the unrestricted setting; the reason OOD leakage is audited, not certified.
+- Yang, Kuchibhotla, Tchetgen Tchetgen — *Doubly Robust Calibration of Prediction Sets Under Covariate Shift* (JRSS-B 2024, [arXiv:2203.01761](https://arxiv.org/abs/2203.01761)) — **finite-sample distribution-free conditional coverage under covariate shift is not attainable** once the weight is estimated; only asymptotic / doubly-robust validity survives. The reason the covariate correction is reported, not guaranteed.
+
+**B.6 Datasets, calibration, trustworthy-ML (venue-relevant)**
+- Koh et al. — *WILDS* (ICML 2021, [arXiv:2012.07421](https://arxiv.org/abs/2012.07421)); Bandi et al. — *CAMELYON17* (IEEE TMI 2018).
+- Irvin et al. — *CheXpert* (AAAI 2019, [arXiv:1901.07031](https://arxiv.org/abs/1901.07031)); Johnson et al. — *MIMIC-CXR* (Sci Data 2019).
+- Guo et al. — *On Calibration of Modern Neural Networks* (ICML 2017, [arXiv:1706.04599](https://arxiv.org/abs/1706.04599)) — ECE.
+- TRUECAM ([arXiv:2501.00053](https://arxiv.org/abs/2501.00053)) — the head-to-head empirical baseline (OOD detect-and-remove); the honest contrast in [positioning_memo](docs/positioning_memo.md) — our contrast with it is **not** a stronger guarantee but *measuring and reporting* the residual leakage its detect-and-remove framing leaves unquantified.
+- Hore & Barber — *RLCP* ([arXiv:2310.07850](https://arxiv.org/abs/2310.07850)) — *optional*; the subgroup audit is reporting with finite-sample intervals, **not** a conditional-coverage guarantee.
+
+**B.7 Background, not used in the applied pipeline.** The following anchored earlier theory tracks that are **out of scope** for this paper and are listed only so the lineage is traceable, not as working references: the Generalized-Label-Shift / Generalized-Target-Shift identification line (Zhang et al. 2013; Gong et al. 2016; Tachet des Combes et al. 2020) and Sparse Joint Shift (Chen, Zaharia & Zou 2022) — the applied combine is a **modeling-choice** `Ẑ(x)`-division with the residual *measured*, not an identification result; the temporal/online-drift line (Gibbs & Candès, ACI/DtACI) — the temporal track is **cut**; and the exotic label-shift estimators (RLLS, GS-B³SE, FMAPLS) and Wang & Qiao 2025 (generalized covariate shift with posterior drift) — **not** estimators or baselines here. The prereg fixes MLLS+BCTS (primary) and BBSE (baseline) as the only label-shift estimators and exactly four baselines ([preregistration §4](docs/preregistration.md)).
+
+---
+
+## Appendix C — Dataset cheat-sheet
+
+> *Authority for splits, folds, source→target directions, and the shift-type diagnostic is [preregistration §2–3](docs/preregistration.md). This is the access/friction quick-reference.*
+
+| Dataset | Modality | Shift mechanism | Access | Friction |
+|---|---|---|---|---|
+| **CAMELYON17-WILDS** | Histopathology | Cross-hospital scanner/stain (**covariate-dominant**) | `wilds` package, open | **Low — start here; unblocks the build now** |
+| **CheXpert** | Chest X-ray | Cross-site institution/protocol + prevalence (**mixed**) | Stanford AIMI registration | Medium — **start credentialing now** |
+| **MIMIC-CXR** | Chest X-ray | Cross-site institution/protocol + prevalence (**mixed**) | PhysioNet credentialed + CITI training | Medium–High — **long pole; start now** |
+
+- **CAMELYON17-WILDS:** binary tumor-vs-normal patches; each source→target **hospital pair evaluated separately, never pooled** ([preregistration §2.1](docs/preregistration.md)). The covariate-dominant benchmark; appearance drift `p(x∣y)` is present at harder pairs, which is exactly why residual degradation is measured rather than assumed away.
+- **CheXpert ↔ MIMIC-CXR:** shared-label chest-radiograph finding classification; **both directions** (CheXpert→MIMIC and MIMIC→CheXpert) as two separate deployments ([preregistration §2.2](docs/preregistration.md)). Mixed covariate + label shift.
+- **Credentialing is the long pole.** CheXpert (Stanford AIMI) and MIMIC-CXR (PhysioNet + CITI human-subjects training) both require human approval that takes weeks. Begin both **immediately** in parallel with the CAMELYON17 build, which needs no credentialing.
+- **Far-OOD exposure set `O`** — off-modality / wrong-anatomy / non-medical probes used to set `t_ood` and **measure leakage** against `α_ood`. `O` is a *stated, swappable* modeling choice, not ground truth; exposure-set sensitivity is reported ([method_note §4.3](docs/method_note.md), [preregistration §5.2](docs/preregistration.md)).
+- **Future-work breadth (honest, not a v1 obligation).** Multi-modality extension — PTB-XL (ECG), EyePACS↔APTOS (retina), MIDOG (2nd-pathology scanner shift), ISIC↔Fitzpatrick17k (dermatology) — is stated as explicit future work. The paper is two imaging benchmarks taken deep ([positioning_memo](docs/positioning_memo.md): depth over breadth).
+
+---
+
+## Appendix D — Applied glossary (one line each)
+
+> *Corrected framing: every line names a property of a method, never a promise about the deployed pipeline.*
+
+- **Exchangeability** — joint distribution invariant to ordering; the assumption split-conformal / RCPS need. Clinical shift breaks it — every failure here is an exchangeability violation.
+- **Marginal coverage** — holds on average over the random cal+test draw, not conditional on a given `x`.
+- **CRC** — calibrate a threshold so the *expected* bounded loss ≤ `α_acc`; no `δ` tail. The less-conservative comparison row.
+- **RCPS** — `(α_acc, δ)` PAC risk control on the realized calibration set/model, **only under cal/test exchangeability**; we use `λ̂` as an operating threshold and *measure* its realized target risk.
+- **LTT** — a multiple-hypothesis-testing correction for jointly tuning `(τ,λ,t_ood)`; used here purely as a multiple-looks correction, no new validity guarantee.
+- **WSR / betting (hedged-capital) bound** — a variance-adaptive upper confidence bound; preferred because importance weights inflate risk-estimate variance. Sets the width of the *reported interval*.
+- **Selective risk / coverage** — error among answered / fraction answered; the risk–coverage curve / AURC summarizes the trade-off.
+- **Weighted conformal** — reweight calibration by a density ratio; transports `1−α` marginal coverage **only under pure covariate shift with the oracle ratio**.
+- **Covariate vs label shift** — `p(x)` moves (label rule fixed) vs `p(y)` moves (case-mix); different importance weights, not interchangeable.
+- **Density ratio `ŵ_cov(x)`** — `p_T(x)/p_S(x)` from a source-vs-target discriminator; unreliable in the far tail → clip at `w_max` and route the overflow to abstain.
+- **Label weight `ŵ_lab(y)`** — `p_T(y)/p_S(y)` from BBSE / MLLS+BCTS target proportions.
+- **BBSE** — estimates target label proportions from the source confusion matrix `Ĉ_S` + target predictions, no target labels; *consistent* under label shift with invertible `Ĉ_S`. Baseline / diagnostic estimator.
+- **MLLS+BCTS** — the **primary** prevalence estimator; maximum-likelihood label shift with bias-corrected temperature-scaled (calibrated) outputs.
+- **`Ẑ(x)` double-count corrector** — the per-`x` normalizer that combines the two weights via `ŵ(x,y)=ŵ_lab(y)·ŵ_cov(x)/Ẑ(x)` **instead of the product** ([method_note §3.3](docs/method_note.md)).
+- **Two operating budgets `α_acc`, `α_ood`** — separately measured budgets for accepted in-distribution error and far-OOD leakage. Their sum is a **reporting convenience only**, never a certified additive bound.
+- **Far-OOD** — inputs unlike training; routed to a human as a **measured screen** with reported leakage on a stated exposure set `O` (distribution-free OOD detection is provably not learnable, Fang et al. 2022).
+- **`n_eff` (Kish)** — effective sample size `(Σŵ)²/Σŵ²`; a **reported reliability diagnostic** flagging weight-dominated regimes, not a certification gate.
+- **`κ(Ĉ_S)`** — conditioning of the source confusion matrix; a diagnostic flagging where the label-shift estimate is least trustworthy.
+- **Distance-aware UQ (SNGP/DDU) & spectral normalization** — single-pass models / Lipschitz constraints that make feature-distance meaningful; ablations that buy *efficiency*, not validity.
+- **RLCP (randomly localized conformal)** — optional local-weight randomization toward approximately conditional coverage; the subgroup audit remains *reporting with intervals*, not a guarantee.
+
+---
+
+## Appendix E — Environment & command cheat-sheet
+
+> *Pin the env, run a config, regenerate every figure from logs. The internal tests are **empirical-milestone checks** (does the shift-aware pipeline maintain/improve realized selective risk vs the naive baseline; does the OOD screen measurably reduce leakage) — **not** proofs that a bound holds.*
 
 ```bash
-# env
+# env (pin + lockfile)
 python -m venv .venv && source .venv/bin/activate
 pip install torch torchvision wilds numpy scipy scikit-learn pandas matplotlib wandb pytest confseq
+pip freeze > requirements.lock
 
-# data (confirm current WILDS API)
+# data (confirm current WILDS API; CAMELYON17 needs no credentialing)
 python -c "from wilds import get_dataset; get_dataset('camelyon17', download=True)"
 
 # run an experiment from a config
 python -m experiments.run --config configs/camelyon17_ours.yaml seed=0
 
-# the synthetic gates (must pass IN ORDER before real data)
-pytest tests/ -k "G_A_exchangeable or G_B_covariate or G_C_label or G_D_imperfect_ood or G_E_changepoint" -v
+# empirical-milestone checks (engineering gates, NOT bound proofs):
+#  shift-aware weighting maintains/improves realized selective risk vs the naive baseline;
+#  the OOD screen measurably reduces far-OOD leakage on the exposure set O.
+pytest tests/ -k "milestone_selective or milestone_covariate or milestone_label or milestone_ood" -v
 
-# regenerate every figure/table from logged runs
+# regenerate every figure/table from logged runs (one script)
 python -m analysis.figures --from-logs runs/ --out paper/figures/
 ```
 
-> **Compute note (single GPU):** cache features once (Stage R prep) so conformal calibration reruns in seconds. Deep-ensemble baselines = K sequential trainings — schedule overnight. WSR/BBSE/budget math runs on cached numbers on CPU, fast.
+> **Compute note (single GPU).** Cache `f`'s logits + features once, so the conformal calibration, the weighting, and the diagnostics rerun in **seconds on CPU**. Deep-ensemble baselines = `K` sequential trainings — schedule overnight. The WSR / MLLS+BCTS / weighting math runs on the cached numbers.
+
+> **Repo note.** The engineering layers are `conformal/{selective,rcps,crc,ltt,weights,label_shift}.py`, `ood/detector.py`, and `analysis/{metrics,figures}.py`. The temporal `conformal/aci.py` is **dropped** (scope cut). `conformal/budget.py` tracks `α_acc` and `α_ood` as **two separately-measured operating budgets**, not a certified additive split.
 
 ---
 
-# Appendix H — Math & notation decoder (plain meanings)
+## Appendix F — Notation pointer
 
-*Keep open while reading. Every symbol the doc uses, in plain words.*
-
-**Core symbols**
-- `x`, `y` — an input (image) and its true label.
-- `f`, `f(x)` — the frozen model, and the scores it outputs.
-- `ŷ(x)` — the model's predicted label. `x̂` (a "hat") — an *estimate* from data, not the truth.
-- `P_S`, `P_T` — the data pattern at **s**ource vs **t**arget hospital.
-
-**Probability & averages**
-- `P(A | B)` — probability of `A` given `B` ("among the `B` cases").
-- `E[Z]` — long-run average. `E[ℓ | g=1]` — average loss among answered cases.
-
-**Knobs and budgets**
-- `α` — error rate you allow; here split as `α = α_acc + α_ood`.
-- `α_acc` — budget for accepted in-distribution error. `α_ood` — budget for far-OOD the detector missed.
-- `δ` — small chance the *promise* fails; RCPS confidence `1−δ`.
-- `ℓ(y,ŷ)` — loss, scaled to `[0,1]`. `u(x)` — uncertainty (high = unsure).
-- `g(x)=1[u(x)≤τ]` — answer (1) if uncertainty below `τ`, else abstain. `τ` — selection threshold.
-- `λ` — the risk-control threshold tuned on calibration. `t_ood` — OOD cutoff; above it, abstain.
-- `m` — how many unlabeled target points you have to calibrate the shift correction.
-
-**Shift & OOD**
-- `w_cov(x)` — covariate density ratio `p_T(x)/p_S(x)`: how *target-like* `x` looks.
-- `w_lab(y)` — label ratio `p_T(y)/p_S(y)`: how the *case-mix* changed (from BBSE).
-- `w(x,y)` — the combined importance weight under the stated shift model.
-- `o(x)` — OOD score: how *unlike training* `x` is (a feature-space distance).
-
-**Operators**
-- `≤`/`≥` at most/least · `∝` proportional to · `⌈·⌉` round up · `inf`/`sup` smallest/largest meeting a condition · `1[·]` 1-if-true-else-0 · `Σ` sum.
-
-**Concepts in two words**
-- **exchangeable** (≈ i.i.d. here) — points "drawn the same way," order doesn't matter; the resemblance conformal needs.
-- **distribution-free** — the promise holds regardless of the data's shape.
-- **finite-sample vs asymptotic** — holds with the data you have vs only as data → ∞.
-- **PAC** — "probably approximately correct": with prob ≥ `1−δ`, error ≤ `α` (RCPS's promise).
-- **BBSE** — black-box estimate of the target class proportions from the confusion matrix + target predictions.
-- **integrated budget** — OOD-detector error is *inside* `α`, not a separate heuristic.
-- **risk–coverage curve / AURC** — error vs how much you answer; AURC summarizes (lower = better).
-- **ECE** — expected calibration error: how honest the raw probabilities are.
-- **bi-Lipschitz** — a mapping that doesn't squash distances, so "far" stays far (why spectral norm helps OOD).
+**Notation, symbols, weights, thresholds, and budgets are the single source of truth in [docs/method_note.md §1](docs/method_note.md)** — see the §1.8 quick-reference table for every symbol. Nothing in this playbook redefines them; where a symbol appears here it carries exactly its method-note meaning. (The old standalone "notation & formulas" and "symbol decoder" appendices are retired in favor of this pointer to avoid a second, drifting source of truth.)
 
 ---
 
-*End of flagship playbook. Work top to bottom; honor the gate ladder G-A→G-R; run each relevant Appendix-D prompt against your actual artifact before calling a stage done.*
+## Appendix G — Applied red-team prompts (optional)
+
+> *Two prompts only, both reframed for the applied measure-and-report paper. The old theory proof-check / gap-coverage prompts are **dropped** — there is no bound to prove and no 5-condition gap to close. Drop either prompt into a search-enabled assistant against your actual artifact.*
+
+**G-1 · Experiment-design critic** (run against [preregistration.md](docs/preregistration.md) before results)
+```
+You are an experienced ML-for-health reviewer for the Springer Discover Computing
+"Intelligent Medicine" collection (explainability + trustworthy/auditable ML). Critique this
+APPLIED evaluation plan for a trustworthy selective-prediction pipeline under clinical shift
+[PASTE: two imaging benchmarks taken deep; covariate+label shift; the four pre-registered
+baselines (naive split-conformal, temperature scaling, TRUECAM-style detect-and-remove, BBSE
+label-weighting); MLLS+BCTS primary estimator; the Ẑ-combine; the measured metrics + reliability
+diagnostics; the per-pair discriminator-AUROC shift-type diagnostic with a fixed τ_disc cutoff].
+The paper claims NO new guarantee — it MEASURES and REPORTS realized selective risk, coverage,
+and far-OOD leakage under shift, overall and by subgroup.
+Tell me: (a) which baseline a reviewer would say is missing, given exactly four are pre-registered;
+(b) whether the metrics actually demonstrate the MEASUREMENT claims — does a plot show label-aware
+weighting reducing realized selective risk vs covariate-only under prevalence shift, and the OOD
+screen measurably reducing leakage under a DELIBERATELY imperfect detector?; (c) the right way to
+report a calibration-draw-marginal MEASURED risk empirically (how many splits, what plot, what
+interval); (d) the most likely confound (base model just worse on target; the win coming from the
+backbone not the pipeline) and how the {standard, DDU, SNGP, ensemble} ablation rules it out —
+remembering the auditability result is base-model-agnostic, the net only moves efficiency;
+(e) whether two imaging benchmarks deep is defensible for this venue, and which single extra
+modality is the cheapest credible rebuttal if a reviewer demands breadth.
+Do not propose adding a guarantee — critique the measurement protocol.
+```
+
+**G-2 · Results red-team** (run against your results before writing the central claim)
+```
+You are a skeptical senior co-author. Here are my results [PASTE tables/figures/setup]. The claim
+is a MEASUREMENT one: under realistic covariate+label shift the pipeline's realized selective risk,
+coverage, and far-OOD leakage are reported with intervals, and the residual degradation is made
+visible per subgroup and per case — NOT that any risk is "held at ≤ α" or certified.
+Try to explain my positive result WITHOUT the pipeline being the cause: confounds, abstention
+inflation (low risk bought by near-total abstention — check against the pre-registered minimum-
+coverage floor), fold leakage, lucky splits, weak baselines, cherry-picked α, dataset quirks, the
+base model simply worse on target, or the win coming from the backbone rather than the composition.
+Specifically attack: (i) is the "label-shift" improvement just covariate weighting in disguise?
+(ii) does the measured OOD leakage hold up when the detector is genuinely imperfect, or only with a
+near-perfect detector? (iii) are the reliability diagnostics (n_eff, κ(Ĉ_S), the q̂_T-vs-Ĉ_S p̂_T
+check) flagging the regimes where my numbers should be distrusted, and did I report them honestly?
+For each alternative, give the exact additional analysis or plot that rules it out. Then tell me
+which MEASUREMENT claims the data supports vs. which I am overstating, and rewrite my central claim
+sentence so it asserts a measured, interval-bounded degradation — never a guarantee.
+```

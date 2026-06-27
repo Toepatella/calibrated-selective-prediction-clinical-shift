@@ -1,4 +1,4 @@
-# Research-Gap Audit — Gap 3: Calibrated Selective Prediction under Clinical Distribution Shift
+ # Research-Gap Audit — Gap 3: Calibrated Selective Prediction under Clinical Distribution Shift
 
 **Audit date:** 2026-06-20 · **Method:** live literature search (PubMed/Europe PMC, arXiv, Semantic Scholar, Google Scholar surfacing, Nature/Springer, conference proceedings) with direct inspection of methods/claims (not abstracts alone) for the closest competitors. **Default posture:** skeptical — I actively tried to prove the gap is already solved.
 

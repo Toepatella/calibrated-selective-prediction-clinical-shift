@@ -2,7 +2,7 @@
 
 Calibrated selective prediction under clinical distribution shift — flagship journal build.
 
-See [flagship-playbook.md](flagship-playbook.md) for the full method, build sequence, and gate ladder (G-A -> G-R). See [repo_links.md](repo_links.md) for every external repo this project draws on and why.
+See [flagship-playbook.md](flagship-playbook.md) for the full method, build sequence, and empirical milestone ladder. See [repo_links.md](repo_links.md) for every external repo this project draws on and why.
 
 ## Data access
 - **CAMELYON17-WILDS**: auto-downloads via the `wilds` pip package (see Appendix G in the playbook).
