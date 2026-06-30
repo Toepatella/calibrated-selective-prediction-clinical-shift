@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Trustworthy selective-prediction pipeline — overview figure.
+  Self-contained (concrete colors baked in via the :root-style block below, so it
+  renders in any browser / image viewer / paper, not just the Claude widget host).
+  To re-theme, edit the CSS custom properties in the <style> block.
+  Companion docs: ../method_note.md · ../preregistration.md · ../positioning_memo.md
+-->
+<svg viewBox="0 0 1200 915" width="1200" height="915" role="img" xmlns="http://www.w3.org/2000/svg">
+  <title>Trustworthy selective-prediction pipeline: frozen classifier, shift-aware calibration, gated inference, and clinician audit layer</title>
+  <desc>A flow diagram. A frozen classifier emits features and probabilities that feed two phases: offline calibration (covariate weight, label weight, combine under a factorizable-shift assumption, OOD detector plus DICOM pre-screen, risk-control thresholds) and per-scan inference (four gates: DICOM, covariate weight, OOD, uncertainty), ending in an answer or a route to a human, all surfaced in a measure-and-report audit layer.</desc>
+  <defs>
+    <marker id="ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0L6,3L0,6Z" fill="var(--text-secondary)"/></marker>
+    <marker id="arA" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0L6,3L0,6Z" fill="var(--text-accent)"/></marker>
+    <style>
+      svg{
+        --text-primary:#1f2328; --text-secondary:#4a5159; --text-muted:#8b929b; --text-accent:#0f766e;
+        --surface-0:#ffffff; --surface-1:#f7f8fa; --surface-2:#eef1f5;
+        --border:#dfe3e8; --border-strong:#c2c8d0;
+        --font-sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+        --font-mono:ui-monospace,"SFMono-Regular","Cascadia Code",Consolas,monospace;
+      }
+      text{fill:var(--text-primary);font-family:var(--font-sans)}
+      .sec{fill:var(--text-secondary)}.mut{fill:var(--text-muted)}.acc{fill:var(--text-accent)}
+      .mono{font-family:var(--font-mono)}
+      .bx{fill:var(--surface-1);stroke:var(--border-strong);stroke-width:1.5}
+      .bx2{fill:var(--surface-2);stroke:var(--border-strong);stroke-width:1.5}
+      .lt{stroke:var(--text-secondary);stroke-width:1.4;fill:none}
+      .la{stroke:var(--text-accent);stroke-width:1.4;fill:none}
+      .abl{fill:none;stroke:var(--text-accent);stroke-width:1.1;stroke-dasharray:4 3}
+    </style>
+  </defs>
+
+  <!-- white background so the standalone file / paper export is clean -->
+  <rect x="0" y="0" width="1200" height="915" fill="var(--surface-0)"/>
+
+  <!-- title -->
+  <text x="600" y="30" font-size="21" text-anchor="middle" font-weight="700">The trustworthy selective-prediction pipeline</text>
+  <text x="600" y="52" font-size="12.5" text-anchor="middle" class="sec">frozen classifier → shift-aware calibration → gated inference → clinician audit</text>
+
+  <!-- frozen classifier -->
+  <rect class="bx2" x="440" y="74" width="320" height="54" rx="10"/>
+  <text x="600" y="96" font-size="14" text-anchor="middle" font-weight="650">Frozen classifier  <tspan class="mono acc">f</tspan></text>
+  <text x="600" y="116" font-size="10.5" text-anchor="middle" class="mut">trained once on source · weights locked</text>
+
+  <!-- outputs pills -->
+  <line class="lt" x1="600" y1="128" x2="600" y2="146" marker-end="url(#ar)"/>
+  <g font-size="11.5" text-anchor="middle">
+    <rect class="bx" x="409" y="150" width="88" height="26" rx="13"/><text class="mono" x="453" y="167">φ(x)</text>
+    <rect class="bx" x="507" y="150" width="88" height="26" rx="13"/><text class="mono" x="551" y="167">σ̃(f(x))</text>
+    <rect class="bx" x="605" y="150" width="88" height="26" rx="13"/><text class="mono" x="649" y="167">ŷ(x)</text>
+    <rect class="bx" x="703" y="150" width="88" height="26" rx="13"/><text class="mono" x="747" y="167">u(x)</text>
+  </g>
+
+  <!-- branch H-tree to two phases -->
+  <path class="lt" d="M600,176 V192 H294 V256" marker-end="url(#ar)"/>
+  <path class="lt" d="M600,192 H812 V256" marker-end="url(#ar)"/>
+
+  <!-- phase headers -->
+  <text x="62" y="223" font-size="15" font-weight="700" class="acc">① OFFLINE CALIBRATION</text>
+  <text x="62" y="241" font-size="10.5" class="mut">run once · source + unlabeled target</text>
+  <text x="664" y="223" font-size="15" font-weight="700" class="acc">② INFERENCE</text>
+  <text x="664" y="241" font-size="10.5" class="mut">per target scan</text>
+
+  <!-- gutter divider -->
+  <line x1="595" y1="262" x2="595" y2="636" stroke="var(--border)" stroke-width="1" stroke-dasharray="3 4" opacity="0.7"/>
+  <text x="595" y="256" font-size="8.5" text-anchor="middle" class="mut">calibrate → apply</text>
+
+  <!-- ===== LEFT: calibration ===== -->
+  <!-- S1 covariate -->
+  <rect class="bx" x="60" y="262" width="228" height="96" rx="9"/>
+  <text x="174" y="283" font-size="12.5" text-anchor="middle" font-weight="600">Covariate-shift weight</text>
+  <text x="174" y="302" font-size="12" text-anchor="middle" class="mono acc">→ ŵ_cov(x)</text>
+  <text x="174" y="319" font-size="10.5" text-anchor="middle" class="sec">domain discriminator</text>
+  <text x="174" y="334" font-size="9.5" text-anchor="middle" class="mut">Tibshirani+ 2019</text>
+  <rect class="abl" x="92" y="340" width="164" height="16" rx="8"/>
+  <text x="174" y="351.5" font-size="9.5" text-anchor="middle" class="acc">+ DR ablation</text>
+
+  <!-- S2 label -->
+  <rect class="bx" x="300" y="262" width="228" height="96" rx="9"/>
+  <text x="414" y="283" font-size="12.5" text-anchor="middle" font-weight="600">Label / prevalence weight</text>
+  <text x="414" y="302" font-size="12" text-anchor="middle" class="mono acc">→ ŵ_lab(y)</text>
+  <text x="414" y="319" font-size="10.5" text-anchor="middle" class="sec">MLLS+BCTS · BBSE</text>
+  <text x="414" y="334" font-size="9.5" text-anchor="middle" class="mut">Alexandari'20 · Lipton'18</text>
+  <rect class="abl" x="332" y="340" width="164" height="16" rx="8"/>
+  <text x="414" y="351.5" font-size="9.5" text-anchor="middle" class="acc">+ MAPLS ablation</text>
+
+  <!-- merge into combine -->
+  <path class="lt" d="M174,358 V372 H294 V382" marker-end="url(#ar)"/>
+  <path class="lt" d="M414,358 V372 H294" />
+
+  <!-- S3 combine (assumption surfaced) -->
+  <rect class="bx" x="150" y="382" width="288" height="56" rx="9"/>
+  <text x="294" y="399" font-size="12" text-anchor="middle" font-weight="600">Combine:  ÷ Z(x), not ×</text>
+  <text x="294" y="415" font-size="9.5" text-anchor="middle" class="sec">assumes factorizable shift (modeling choice)</text>
+  <text x="294" y="429" font-size="9.5" text-anchor="middle" class="mut">Z removes double-count — corrections don't fight</text>
+
+  <line class="lt" x1="294" y1="438" x2="294" y2="452" marker-end="url(#ar)"/>
+
+  <!-- S4 OOD -->
+  <rect class="bx" x="60" y="452" width="468" height="92" rx="9"/>
+  <text x="294" y="476" font-size="13" text-anchor="middle" font-weight="650">OOD detector  +  DICOM pre-screen</text>
+  <text x="294" y="496" font-size="12" text-anchor="middle" class="mono acc">→ o(x),  t̂_ood</text>
+  <text x="294" y="514" font-size="10.5" text-anchor="middle" class="sec">Mahalanobis++ (L2-norm, in-distribution-only)</text>
+  <text x="294" y="531" font-size="9.5" text-anchor="middle" class="mut">Müller 2025 · ablations: plain Lee'18 · energy · kNN · ReAct</text>
+
+  <line class="lt" x1="294" y1="544" x2="294" y2="562" marker-end="url(#ar)"/>
+
+  <!-- S5 thresholds -->
+  <rect class="bx" x="60" y="562" width="468" height="74" rx="9"/>
+  <text x="294" y="585" font-size="13" text-anchor="middle" font-weight="650">Risk-control thresholds</text>
+  <text x="294" y="605" font-size="12" text-anchor="middle" class="mono acc">→ τ̂,  λ̂   (selection · risk)</text>
+  <text x="294" y="623" font-size="9.8" text-anchor="middle" class="mut">RCPS · betting UCB · LTT — Bates'21 · WSR'24 · Angelopoulos</text>
+
+  <!-- ===== RIGHT: inference gates ===== -->
+  <!-- G0 -->
+  <rect class="bx2" x="662" y="262" width="300" height="54" rx="9"/>
+  <text x="812" y="287" font-size="12.5" text-anchor="middle" font-weight="600">DICOM / metadata in scope?</text>
+  <text x="812" y="304" font-size="9.5" text-anchor="middle" class="mut">high-precision flag · falls through if unsure</text>
+  <!-- G1 -->
+  <rect class="bx2" x="662" y="330" width="300" height="54" rx="9"/>
+  <text x="812" y="353" font-size="12.5" text-anchor="middle" class="mono">ŵ_cov(x) ≤ w_max ?</text>
+  <text x="812" y="371" font-size="9.5" text-anchor="middle" class="mut">covariate weight trustworthy?</text>
+  <!-- G2 -->
+  <rect class="bx2" x="662" y="398" width="300" height="54" rx="9"/>
+  <text x="812" y="421" font-size="12.5" text-anchor="middle" class="mono">o(x) ≤ t̂_ood ?</text>
+  <text x="812" y="439" font-size="9.5" text-anchor="middle" class="mut">in-distribution enough?</text>
+  <!-- G3 -->
+  <rect class="bx2" x="662" y="466" width="300" height="54" rx="9"/>
+  <text x="812" y="489" font-size="12.5" text-anchor="middle" class="mono">u(x) ≤ τ̂ ?</text>
+  <text x="812" y="507" font-size="9.5" text-anchor="middle" class="mut">confident enough to answer?</text>
+
+  <!-- pass arrows -->
+  <line class="lt" x1="812" y1="316" x2="812" y2="330" marker-end="url(#ar)"/>
+  <line class="lt" x1="812" y1="384" x2="812" y2="398" marker-end="url(#ar)"/>
+  <line class="lt" x1="812" y1="452" x2="812" y2="466" marker-end="url(#ar)"/>
+  <line class="lt" x1="812" y1="520" x2="812" y2="556" marker-end="url(#ar)"/>
+  <text x="828" y="540" font-size="9" class="acc">all pass ✓</text>
+
+  <!-- ANSWER -->
+  <rect x="662" y="556" width="300" height="60" rx="10" fill="var(--surface-2)" stroke="var(--text-accent)" stroke-width="2"/>
+  <text x="812" y="581" font-size="14" text-anchor="middle" font-weight="700">ANSWER  <tspan class="mono">ŷ(x)</tspan></text>
+  <text x="812" y="600" font-size="10.5" text-anchor="middle" class="sec">+ per-case audit record</text>
+
+  <!-- route lane -->
+  <rect x="992" y="262" width="178" height="258" rx="10" fill="var(--surface-1)" stroke="var(--text-accent)" stroke-width="1.5"/>
+  <text x="1081" y="285" font-size="12.5" text-anchor="middle" font-weight="650" class="acc">→ Human reviewer</text>
+  <text x="1081" y="301" font-size="9.5" text-anchor="middle" class="mut">routed / deferred</text>
+  <g font-size="10.5"><text x="1008" y="338">✗ out of scope</text>
+  <text x="1008" y="378">✗ weight untrusted</text>
+  <text x="1008" y="418">✗ far-OOD suspected</text>
+  <text x="1008" y="458">✗ too uncertain (defer)</text></g>
+  <text x="1081" y="498" font-size="8.8" text-anchor="middle" class="mut" font-style="italic">deferral = the trust mechanism</text>
+
+  <!-- route arrows -->
+  <path class="la" d="M962,289 H990" marker-end="url(#arA)"/>
+  <path class="la" d="M962,357 H990" marker-end="url(#arA)"/>
+  <path class="la" d="M962,425 H990" marker-end="url(#arA)"/>
+  <path class="la" d="M962,493 H990" marker-end="url(#arA)"/>
+
+  <!-- to audit -->
+  <path class="lt" d="M812,616 V648" marker-end="url(#ar)"/>
+  <path class="la" d="M1081,520 V648" marker-end="url(#arA)"/>
+
+  <!-- ===== audit layer ===== -->
+  <rect class="bx" x="60" y="650" width="1110" height="120" rx="10"/>
+  <text x="80" y="676" font-size="14" font-weight="700" class="acc">③ CLINICIAN AUDIT LAYER</text>
+  <text x="300" y="676" font-size="11" class="mut">measure &amp; report · no new guarantee</text>
+  <rect class="bx2" x="80" y="688" width="520" height="68" rx="8"/>
+  <text x="100" y="709" font-size="11.5" font-weight="600">Answered case</text>
+  <text x="100" y="727" font-size="10.5" class="sec">σ̃ confidence · representativeness chip ŵ(x,ŷ)</text>
+  <text x="100" y="744" font-size="10.5" class="sec">· n_eff flag · residual-correction CI</text>
+  <rect class="bx2" x="630" y="688" width="520" height="68" rx="8"/>
+  <text x="650" y="709" font-size="11.5" font-weight="600">Declined case</text>
+  <text x="650" y="727" font-size="10.5" class="sec">Decline-Attribution Record: which gate fired</text>
+  <text x="650" y="744" font-size="10.5" class="sec">+ signed margins (routing-faithful)</text>
+
+  <!-- footer honesty -->
+  <rect x="60" y="786" width="1110" height="56" rx="9" fill="var(--surface-2)" stroke="var(--border)" stroke-width="1"/>
+  <text x="600" y="809" font-size="11" text-anchor="middle" class="sec">Honesty stance: every number is measured on held-out target with its CI; each method's guarantee is cited only under its own assumptions.</text>
+  <text x="600" y="827" font-size="11" text-anchor="middle" class="sec">Two impossibility results (Fang 2022 · Yang 2024) ground the stance — measure and report, never certify the deployed pipeline.</text>
+
+  <!-- legend -->
+  <g font-size="10">
+    <rect class="bx" x="300" y="868" width="13" height="13" rx="3"/><text x="319" y="878" class="sec">pipeline stage</text>
+    <rect class="abl" x="452" y="868" width="13" height="13" rx="3"/><text x="471" y="878" class="sec">pre-registered ablation</text>
+    <line class="la" x1="660" y1="874" x2="684" y2="874" marker-end="url(#arA)"/><text x="690" y="878" class="sec">route / defer to human</text>
+  </g>
+</svg>

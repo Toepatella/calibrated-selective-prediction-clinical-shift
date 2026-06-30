@@ -90,6 +90,26 @@ The **full pipeline** of method note §§3–5 (MLLS+BCTS label weight, discrimi
 
 ---
 
+## 4A. Pre-registered ablations (component swaps within the full pipeline)
+
+Distinct from the §4 baselines (reference *methods*), these are **component swaps inside the full pipeline** that isolate one design choice while holding everything else fixed. Each is run on the same folds, the same frozen `f`, and the same held-out target test set; each is reported against the primary on the §5.1 metrics at a **matched total answer-rate** with betting intervals; and a "win" follows the **non-overlapping-interval rule** of §6.7. Neither ablation converts a measured quantity into a guarantee, and neither recovers a certificate under shift (§8).
+
+1. **MAPLS label-shift ablation (small-`m`–targeted).** Swap the primary prevalence estimator MLLS+BCTS (method note §3.4 step 2) for **MAPLS** — maximum-a-posteriori label-shift estimation, i.e. MLLS with a Dirichlet prior on `p_T(y)` — holding every other component fixed (discriminator covariate weight, `Ẑ`-combine, OOD routing, LTT-wrapped grid).
+   - *What it isolates.* Whether Dirichlet-regularized MAP estimation of `p_T(y)` reduces label-weight error in the **small-`m`** regime, where the MLLS likelihood term is highest-variance (few unlabeled target points form `q̂_T`). Evaluated across the pre-registered small-`m` grid of §6.6. Across that grid we report `κ(Ĉ_S)` and the **effective rank** of `Ĉ_S`, so the regime where BBSE is ill-conditioned (inadmissible) and MAPLS's prior is doing the lifting is visible, not implicit.
+   - *Fixed before results.* The Dirichlet prior — centered on the source prevalence `p_S(y)` with a fixed concentration — plus a small pre-registered concentration sweep reported as a sensitivity; the **same** `D_bbse^src` (for `Ĉ_S`) and `D_tar` (for `q̂_T`) folds as the primary; reporting on the §5.1 selective-risk metrics plus `κ(Ĉ_S)` and `n_eff` (§5.4).
+   - *Honest framing.* MAPLS shares the label-shift + confusion-matrix-invertibility identifiability conditions of MLLS/BBSE (Garg et al. 2020); the prior trades variance for bias and carries **no finite-sample certificate**. The deliverable is a **measured** selective-risk delta vs MLLS+BCTS with betting intervals; if it does not clear the intervals in the small-`m` cells we report "**no measured small-`m` advantage**," not a null guarantee.
+
+2. **Doubly-robust (DR) covariate-correction ablation.** Replace the Hájek self-normalized accepted-risk estimator `R̂_w` (method note §3.4 step 5) with a **doubly-robust / augmented (AIPW-style)** estimator that pairs the discriminator weight `ŵ_cov` with an **outcome model** `m̂(x) ≈ E_S[ ℓ(Y, ŷ(X)) ∣ φ(x) ]` fit on labeled source, of the schematic form
+   ```
+   R̂_DR^accept  ∝  Σ_{A} [ m̂(xᵢ) + ŵᵢ ( ℓᵢ − m̂(xᵢ) ) ]   (self-normalized over the accepted in-scope set)
+   ```
+   holding all other components fixed.
+   - *What it isolates.* Whether augmenting the **estimated** covariate weight with a source outcome model **shrinks the measured residual** degradation (the plug-in-vs-empirical gap on `D_tar^lab`, §7) — the partial robustness the DR construction buys: consistency if **either** `ŵ_cov` **or** `m̂` is correct (Yang, Kuchibhotla & Tchetgen Tchetgen 2024; Qiu, Dobriban & Tchetgen Tchetgen 2023). This is the empirical answer to "why only measure the residual rather than shrink it first" (method note §7.1).
+   - *Fixed before results.* The outcome-model family for `m̂` (a light regressor on the frozen `φ(x)`) and its **disjoint** fitting fold (labeled source, disjoint from `D_cal`, `D_bbse^src`, and test); the self-normalization convention; and that DR is run **primarily on the covariate-dominant path** (CAMELYON17, and the covariate factor of the mixed benchmark), since under *joint* covariate+label shift the pure-covariate DR construction does not transfer unmodified — on the mixed benchmark it is an exploratory, explicitly caveated arm.
+   - *Honest framing.* DR validity here is **asymptotic**, not a finite-sample deployment certificate, and `m̂` is a **second estimated object** that can itself be misspecified — so the **Hájek single-model estimate remains the auditable primary headline**, and DR is reported as the residual-shrinkage diagnostic, showing the DR-vs-Hájek delta and both betting intervals. A smaller DR residual is a measured improvement, **not** a bound (§8).
+
+---
+
 ## 5. Metrics (fixed before results)
 
 All metrics are **measured on the held-out target test set** (and, where a residual/weight correction is needed, on `D_tar^lab`), reported per benchmark, per source→target pair/direction, and per pre-registered subgroup. Each is a reported number with its sampling uncertainty — none is a certificate.
@@ -127,7 +147,8 @@ For each pre-registered subgroup `s` (§7), on labeled target (`D_tar^lab` where
 Reported alongside every evaluation, never used to silently emit or withhold a number (method note §1.7, §7.5):
 
 - **Effective sample size** `n_eff = (Σ ŵ_i)² / Σ ŵ_i²` (Kish) — flags low-effective-sample regimes; low-`n_eff` configurations are reported as low-reliability, not averaged in silently.
-- **BBSE conditioning** `κ(Ĉ_S)` — label-shift error grows as `Ĉ_S` becomes ill-conditioned; worst-class error reported with it.
+- **Overlap / positivity diagnostic.** Source→target support overlap — the silent failure mode of every importance-weighted estimator — is summarized by three numbers reported together: (i) the per-pair **discriminator AUROC** (AUROC → 1 ⇒ near-disjoint supports, a positivity violation rather than merely large shift); (ii) the **routed-tail fraction** `P̂(ŵ_cov > w_max)` — the share of target mass whose density ratio is untrustworthy, i.e. the empirical positivity-violation rate; and (iii) `n_eff`. We state explicitly that the **doubly-robust estimator (§4A) and the residual-correction CI (method note §6.1) both degrade as overlap worsens**, and every weighted result is read against these three; poor-overlap pairs are flagged, never silently averaged into a headline.
+- **BBSE conditioning** `κ(Ĉ_S)` — label-shift error grows as `Ĉ_S` becomes ill-conditioned; worst-class error reported with it. We report it **as a function of the unlabeled-target size `m`**, alongside the **effective rank** of `Ĉ_S`, so the boundary where BBSE becomes inadmissible — and the MAPLS ablation (§4A) is doing the lifting — is visible rather than implicit.
 - **BBSE consistency check** — `q̂_T` vs `Ĉ_S p̂_T`, to flag gross anti-causal / appearance-shift violation.
 - **Per-pair discriminator AUROC** — the §3.2 shift-severity diagnostic, reported continuously.
 - **Clip-induced abstention rate** — the mass routed by `ŵ_cov > w_max`, since clipping itself biases the weights and its effect is reported empirically.
@@ -183,6 +204,8 @@ Also fixed before results, for the §5 reporting and display rules: the **severi
 ### 6.6 Stress axes (pre-registered)
 
 The deliberate stress sweeps, each on a fixed grid: small **unlabeled-target size `m`**; **source→target pair / direction** (each CAMELYON17 hospital pair; both CheXpert↔MIMIC directions); a **weight-clip `w_max` sweep** (over a fixed `w_max` grid, report the Hájek weighted risk + its interval + `n_eff` at each clip; cells where the headline number is **non-flat** across the grid go to the **failure-mode catalog**, since clip-sensitivity means the reported risk is an artifact of the clip choice); and, for the mixed benchmark, the **target-prevalence sweep** of §3.1. These define the failure-mode catalog the experiments stress; the cells are fixed before results.
+
+**Backbone-robustness check (scoped, fixed before results).** Because every OOD/detector result is explicitly **backbone-conditional** (method note §4.1), the **headline selective-risk and the OOD-detector comparison** are run on **two architecturally distinct frozen backbones** — one ImageNet-pretrained CNN and one domain/medical foundation-model (ViT) encoder — so the headline cannot be a single-backbone artifact (our pathology foil TRUECAM likewise spans multiple foundation backbones). To stay within scope before the deadline, the **full ablation grid (MAPLS, DR, prevalence sweep) runs on the primary backbone only**; the second backbone covers the headline + OOD comparison. This scoping is **disclosed, not silent** — we report exactly which results are single- vs two-backbone.
 
 ### 6.7 Interval, comparison, and matched-operating-point protocol (pre-registered)
 
