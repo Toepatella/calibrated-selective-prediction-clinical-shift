@@ -1,0 +1,9 @@
+# Data / model stack — install ON TOP OF requirements.txt for the real-data
+# stages (D: integrated OOD on CXR; E: temporal/CAMELYON17). Heavy (~2.5 GB for
+# torch); deferred so synthetic Stages A-C don't require it.
+#   .venv/Scripts/python -m pip install -r requirements-data.txt
+# Versions verified to resolve on Python 3.13 (pip --dry-run, 2026-06-30).
+torch==2.12.1
+torchvision==0.27.1
+wilds==2.0.0
+wandb

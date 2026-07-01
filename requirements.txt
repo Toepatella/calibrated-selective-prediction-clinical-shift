@@ -1,11 +1,13 @@
-torch
-torchvision
-wilds
-numpy
-scipy
-scikit-learn
-pandas
-matplotlib
-wandb
-pytest
-confseq
+# Core stack — calibrated-selective-prediction-clinical-shift
+# Python 3.13 (only interpreter pinned for this project; torch/wilds verified to
+# resolve on 3.13 as of 2026-06-30). Create env with:  py -3.13 -m venv .venv
+#
+# This file covers the conformal / OOD algorithm work and the synthetic gates
+# (Stages A-C). For the real-data stages (D/E: CXR + CAMELYON17) also install
+# requirements-data.txt. Stats (WSR / betting UCB, binom tails) are hand-rolled
+# per the phase0 convention, so no confseq / sklearn dependency here.
+numpy==2.5.0
+scipy==1.18.0
+pandas==3.0.3
+matplotlib==3.11.0
+pytest==9.1.1
