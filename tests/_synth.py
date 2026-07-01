@@ -32,7 +32,7 @@ artifact of one hand-picked construction (``build_gates.md §4`` open question).
 import numpy as np
 from scipy.stats import norm
 
-__all__ = ["PolyErrorModel", "GaussianCovariateShift"]
+__all__ = ["PolyErrorModel", "GaussianCovariateShift", "LabelShiftMixture"]
 
 
 class PolyErrorModel:
@@ -229,3 +229,206 @@ class GaussianCovariateShift:
         u = self.u(x)
         losses = (rng.uniform(size=n) < self.r(x)).astype(float)
         return x, u, losses
+
+
+class LabelShiftMixture:
+    """Synthetic K-class label-/prevalence-shift ground truth (Gate-C fixture).
+
+    Fully synthetic (no clinical data). Invariant class-conditionals ``p(x|y)``, a
+    known source prevalence ``p_S(y)`` and target prevalence ``p_T(y)``, a frozen
+    Bayes classifier ``f`` with a well-conditioned confusion matrix, a
+    class-structured 0-1 loss, and an OPTIONAL covariate tilt that is either
+    ORTHOGONAL to the label signal (a *factorizable* combined shift) or ALONG it
+    (an *entangled* shift). Everything a Gate-C check needs is then closed form
+    (``build_gates.md §6``: "explicit, invariant class-conditionals ... so label
+    shift holds by construction"):
+
+      * oracle label ratio        ``w_lab*(y) = p_T(y)/p_S(y)``,
+      * closed-form source posterior ``p_S(y|x)``  ⇒  oracle
+        ``Z*(x) = Σ_{y'} w_lab*(y')·p_S(y'|x)``,
+      * closed-form marginal densities  ⇒  oracle ``w_cov*(x) = p_T(x)/p_S(x)``,
+      * closed-form joint ratio  ``w_joint*(x,y) = p_T(x,y)/p_S(x,y)``,
+      * the combine identity ``w*(x,y) = w_lab*(y)·w_cov*(x)/Z*(x)`` is EXACT in the
+        factorizable regime (``tilt='x2'``) and BROKEN in the entangled regime
+        (``tilt='x1'``) -- the two regimes the entanglement diagnostic must tell
+        apart (``method_note §3.3``, §3.4 step 3; ``build_gates.md §6``).
+
+    Geometry
+    --------
+    ``x = (x1, x2) ∈ ℝ²``. Classes are separated ALONG ``x1`` only:
+    ``p(x1|y) = N(means[y], 1)``; ``x2 ~ N(0, 1)`` is class-independent noise. The
+    frozen classifier is the Bayes rule under ``p_S`` using ``x1`` alone, so ``x2``
+    is a covariate direction ORTHOGONAL to the label signal. A tilt on ``x2`` is
+    therefore a factorizable covariate shift (its likelihood ratio ``a(x2)`` is
+    class-free, so ``E_{p_S(·|y)}[a]`` is constant in ``y`` and the factorization is
+    exact); a tilt on ``x1`` moves the class-discriminative coordinate and entangles
+    the two mechanisms (the class-conditional ``p(x1|y)`` itself shifts, violating
+    label-shift invariance).
+
+    Because ``x2`` cancels in the Bayes posterior and ``ℓ ⟂ x | y``, the covariate-
+    only reweighting (a function of ``x``) cannot recover a *label-marginal* change
+    in the class mix -- which is exactly why the label-aware ``Ẑ``-combined path
+    lowers the Hájek risk vs covariate-only (``build_gates.md §6`` gate 5;
+    ``method_note §3`` label-shift row: "covariate-only reweighting cannot capture a
+    label-marginal change").
+
+    Honesty rails (``build_gates.md §6``): a SYNTHETIC wiring fixture with known
+    ground truth. It proves nothing about deployment, claims no ``(α,δ)`` or
+    distribution-free guarantee for ``w_lab`` / MLLS / the combined weight, and
+    introduces no method -- BBSE/MLLS carry only *consistency* under label shift.
+    """
+
+    def __init__(self, means, p_s, p_t, rho, tilt=None, theta=0.0):
+        self.means = np.asarray(means, dtype=float)
+        self.p_s = np.asarray(p_s, dtype=float)
+        self.p_t = np.asarray(p_t, dtype=float)
+        self.rho = np.asarray(rho, dtype=float)
+        self.K = self.means.size
+        if not (self.p_s.size == self.p_t.size == self.rho.size == self.K):
+            raise ValueError("means, p_s, p_t, rho must share length K")
+        for name, p in (("p_s", self.p_s), ("p_t", self.p_t)):
+            if abs(p.sum() - 1.0) > 1e-9 or np.any(p < 0):
+                raise ValueError(f"{name} must be a probability vector")
+        if np.any((self.rho < 0) | (self.rho > 1)):
+            raise ValueError("rho must lie in [0, 1]")
+        if tilt not in (None, "x1", "x2"):
+            raise ValueError("tilt must be None, 'x1', or 'x2'")
+        self.tilt = tilt
+        self.theta = float(theta)
+
+    # -- frozen Bayes classifier (uses x1 only) ----------------------------
+    def logits(self, X):
+        """Bayes logits under ``p_S``: ``-(x1-means_k)²/2 + log p_S(k)`` (x2 ignored).
+
+        These are the frozen classifier ``f``'s scores. ``x2`` cancels in the
+        softmax (it is class-independent), so the softmax equals the exact source
+        posterior ``p_S(y|x)`` -- i.e. ``f`` is perfectly CALIBRATED under ``p_S``.
+        Gate-C's BCTS checks deliberately MIS-calibrate these logits and confirm
+        BCTS restores calibration.
+        """
+        X = np.atleast_2d(np.asarray(X, dtype=float))
+        x1 = X[:, 0]
+        return -0.5 * (x1[:, None] - self.means[None, :]) ** 2 + np.log(self.p_s)[None, :]
+
+    def posterior_S(self, X):
+        """Closed-form source posterior ``p_S(y|x)`` = softmax of the Bayes logits."""
+        lg = self.logits(X)
+        lg = lg - lg.max(axis=1, keepdims=True)
+        e = np.exp(lg)
+        return e / e.sum(axis=1, keepdims=True)
+
+    def predict(self, X):
+        """Frozen hard prediction ``ŷ(x) = argmax_k p_S(y=k|x)``."""
+        return np.argmax(self.logits(X), axis=1)
+
+    def uncertainty(self, X):
+        """Selection score ``u(x) = 1 - max_k p_S(k|x)`` (higher = less confident)."""
+        return 1.0 - self.posterior_S(X).max(axis=1)
+
+    # -- oracle label / covariate / combined weights (closed form) ---------
+    def oracle_w_lab(self):
+        """Oracle label ratio ``w_lab*(y) = p_T(y)/p_S(y)`` (shape (K,))."""
+        return self.p_t / self.p_s
+
+    def oracle_Z(self, X):
+        """Oracle double-count corrector ``Z*(x) = Σ_{y'} w_lab*(y')·p_S(y'|x)``."""
+        return self.posterior_S(X) @ self.oracle_w_lab()
+
+    def _class_cond(self, X, domain):
+        """``p_d(x|y)`` for every class, shape (n, K), for domain ``d`` in {'S','T'}."""
+        X = np.atleast_2d(np.asarray(X, dtype=float))
+        x1, x2 = X[:, 0], X[:, 1]
+        m = self.means.copy()
+        mu2 = 0.0
+        if domain == "T" and self.tilt == "x1":
+            m = m + self.theta                      # entangled: shifts class coord
+        if domain == "T" and self.tilt == "x2":
+            mu2 = self.theta                        # factorizable: shifts noise coord
+        pdf1 = norm.pdf(x1[:, None] - m[None, :])   # (n, K)
+        pdf2 = norm.pdf(x2 - mu2)[:, None]          # (n, 1)
+        return pdf1 * pdf2
+
+    def p_x(self, X, domain):
+        """Marginal density ``p_d(x) = Σ_y p_d(x|y)·p_d(y)`` (closed form)."""
+        prev = self.p_s if domain == "S" else self.p_t
+        return self._class_cond(X, domain) @ prev
+
+    def oracle_w_cov(self, X):
+        """Oracle covariate ratio ``w_cov*(x) = p_T(x)/p_S(x)`` (closed form).
+
+        In the pure-label-shift regime (no tilt) this EQUALS ``Z*(x)`` exactly (the
+        prevalence change is the only thing moving ``p(x)``); with a factorizable
+        ``x2`` tilt it is ``a(x2)·Z*(x)``; with an entangled ``x1`` tilt it is a
+        genuine Gaussian-mixture ratio that no longer factors through ``Z``.
+        """
+        return self.p_x(X, "T") / self.p_x(X, "S")
+
+    def oracle_w_joint(self, X, y):
+        """Oracle joint ratio ``w_joint*(x,y) = p_T(x,y)/p_S(x,y)`` (closed form).
+
+        The GROUND-TRUTH combined weight. Equals ``w_lab*(y)·w_cov*(x)/Z*(x)`` iff
+        the shift is factorizable -- the identity the entanglement diagnostic tests.
+        """
+        y = np.asarray(y)
+        cs = self._class_cond(X, "S")
+        ct = self._class_cond(X, "T")
+        idx = np.arange(len(y))
+        ps_xy = cs[idx, y] * self.p_s[y]
+        pt_xy = ct[idx, y] * self.p_t[y]
+        return pt_xy / ps_xy
+
+    # -- population confusion matrix (frozen f, source) --------------------
+    def confusion_S(self, rng, n=400_000):
+        """Large-sample SOURCE confusion matrix ``C_S[i,k]=P_S(ŷ=i, y=k)`` (joint).
+
+        A precise MC estimate of the population joint confusion of the frozen
+        classifier under ``p_S`` (``build_gates.md §6`` sanctions large-sample
+        integration for ground truth). Rows/cols index predicted/true class.
+        """
+        X, y, yhat, _, _ = self.sample(n, rng, "S")
+        C = np.zeros((self.K, self.K))
+        np.add.at(C, (yhat, y), 1.0)
+        return C / n
+
+    # -- analytic-ish accepted risk / coverage (MC oracle) -----------------
+    def accepted_risk(self, tau0, domain, rng, n=2_000_000):
+        """True accepted-region risk ``E_d[ℓ | u(x) ≤ tau0]`` (large-sample MC).
+
+        ``ℓ | y ~ Bernoulli(rho[y])`` independent of ``x`` given ``y``, so the
+        accepted risk is a class-mix average that DIFFERS between source and target
+        whenever the prevalence differs -- the signal the label-aware path recovers.
+        NaN if nothing is accepted. ``build_gates.md §6`` sanctions large-sample
+        integration for the known ground truth.
+        """
+        X, y, yhat, loss, u = self.sample(n, rng, domain)
+        acc = u <= tau0
+        return float(loss[acc].mean()) if acc.any() else float("nan")
+
+    def accepted_coverage(self, tau0, domain, rng, n=2_000_000):
+        """True accepted fraction ``P_d(u(x) ≤ tau0)`` (large-sample MC)."""
+        X, y, yhat, loss, u = self.sample(n, rng, domain)
+        return float(np.mean(u <= tau0))
+
+    # -- sampling ----------------------------------------------------------
+    def sample(self, n, rng, domain):
+        """Draw ``n`` i.i.d. points from the named domain.
+
+        Returns ``(X, y, yhat, loss, u)``: features ``X`` shape (n, 2), true class
+        ``y``, frozen prediction ``ŷ``, 0-1 loss ``ℓ ~ Bernoulli(rho[y])``, and
+        selection score ``u(x)``. ``rng`` is a ``numpy.random.Generator``
+        (``build_gates.md §3`` seeding convention).
+        """
+        n = int(n)
+        prev = self.p_s if domain == "S" else self.p_t
+        y = rng.choice(self.K, size=n, p=prev)
+        x1 = self.means[y] + rng.normal(0.0, 1.0, size=n)
+        x2 = rng.normal(0.0, 1.0, size=n)
+        if domain == "T" and self.tilt == "x1":
+            x1 = x1 + self.theta
+        if domain == "T" and self.tilt == "x2":
+            x2 = x2 + self.theta
+        X = np.column_stack([x1, x2])
+        yhat = self.predict(X)
+        loss = (rng.uniform(size=n) < self.rho[y]).astype(float)
+        u = self.uncertainty(X)
+        return X, y, yhat, loss, u

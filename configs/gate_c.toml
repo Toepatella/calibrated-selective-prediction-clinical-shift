@@ -1,0 +1,90 @@
+# Gate-C run config -- the "proposed" numeric budgets/counts for the label-/
+# prevalence-shift rung (BBSE, MLLS+BCTS, and the Ẑ-divide combine). As with
+# configs/gate_a.toml and gate_b.toml, build_gates.md §6 flags these as
+# declared-fixed-in-advance (prereg §6.5/§6.7/§6.8) but NOT pinned to numbers in
+# the docs; committing them here makes the Gate-C gate authoritative and auditable
+# (build_gates.md §6 "Open questions").
+#
+# EVERY value is a PROPOSED engineering choice, not a doc constant, and not a
+# clinical/deployment claim -- it parameterizes a SYNTHETIC wiring check of the
+# label-shift estimators and the Ẑ-combine under a KNOWN prevalence shift.
+
+[budgets]
+alpha_acc    = 0.1     # target accepted-region risk (carried from Gate A/B)   (prereg §6.2)
+delta        = 0.1     # PAC / interval confidence: property holds w.p. >= 1-delta
+coverage_min = 0.1     # degeneracy floor; below => flagged, NEVER gated        (prereg §6.4)
+w_lab_min    = 0.001   # ŵ_lab FLOOR (> 0 keeps Ẑ strictly positive)            (method_note §3.4 step 2)
+w_lab_max    = 50.0    # ŵ_lab CEILING (an ill-conditioned Ĉ_S cannot blow up Z) (method_note §3.4 step 2)
+
+# --- Primary K=2 regime: mirrors the method_note §3.3/§7.4 worked 2-class example.
+# means=[-1,1] gives GENUINE class overlap (Bayes error ~16%), so the classifier
+# cannot resolve the label mix on ambiguous accepted points -- which is exactly
+# where covariate-only reweighting fails and the label-aware Ẑ-combine wins
+# (build_gates.md §6 gate 5). p_S=(.5,.5)->p_T=(.9,.1) => w_lab*=(1.8,0.2): class 0
+# here is the method_note "class 1" (the .5->.9 majority-in-target class, w_lab=1.8).
+[k2]
+means = [-1.0, 1.0]
+p_s   = [0.5, 0.5]
+p_t   = [0.9, 0.1]
+rho   = [0.02, 0.85]   # class-structured 0-1 loss ℓ|y ~ Bernoulli(rho[y]); ℓ ⟂ x | y
+tau0  = 0.4            # selective accept region {u <= tau0}; covers ~0.90 of source
+theta_cov = 0.8        # factorizable covariate tilt (on x2, ⟂ label signal)
+theta_ent = 1.0        # entangled covariate tilt (on x1, along the label signal)
+
+# --- Secondary K=3 regime (build_gates.md §6: "start K=2 ... then K>=3").
+[k3]
+means = [-3.0, 0.0, 3.0]
+p_s   = [0.34, 0.33, 0.33]
+p_t   = [0.6, 0.3, 0.1]
+rho   = [0.03, 0.2, 0.7]
+
+# --- Deliberate miscalibration for the MLLS-without-BCTS diagnostic (K=2).
+# The frozen classifier is calibrated under p_S, so we DISTORT its logits
+# (temperature T_mis, per-class bias b_mis) to simulate an uncalibrated network;
+# BCTS must then recover calibration (prereg §4A.4; method_note §1.5).
+[bcts]
+T_mis = 3.0
+b_mis = [0.0, 1.0]
+
+[monte_carlo]
+# BBSE recovery (hard gate 1): K=2 grid, tolerance at large sample, monotone shrink.
+bbse_T    = 500                 # MC trials averaged per grid point
+bbse_grid = [250, 1000, 5000]   # n_src = n_tar draw sizes
+bbse_tol  = 0.05                # mean max_y|ŵ_lab - w_lab*| pass line at n >= 5000
+k3_n      = 8000                # K=3 recovery draw size (large sample)
+k3_T      = 200                 # K=3 recovery trial count
+# MLLS+BCTS recovery (hard gate 2).
+mlls_T        = 300             # MC trials (fit_bcts optimization per trial)
+mlls_n        = 5000            # source/target draw size
+mlls_prev_tol = 0.05            # max_y|p̂_T - p_T| pass line at large sample
+mlls_bbse_tol = 0.10            # max_y|ŵ_lab,MLLS - ŵ_lab,BBSE| agreement pass line
+# Ẑ-divide exactness (hard gate 3): oracle-input identity checks.
+zdiv_n         = 30000          # combined-regime sample for the mean-error check
+zdiv_tol_pure  = 1e-6           # |ŵ - 1.8| tolerance for the pure-label oracle Ẑ-divide
+zdiv_tol_comb  = 0.02           # mean|w_Zdivide - w*| on the combined regime (oracle inputs)
+zdiv_prod_mult = 5.0            # naïve-product mean error must be >= this x the Ẑ-divide error
+collapse_n     = 20000          # sample for the HG4 pure-regime collapse checks
+collapse_tol   = 1e-6           # per-point collapse tolerance (w_cov==Z ; Z==1)
+# Label-aware vs covariate-only (hard gate 5): signed win + interval non-overlap.
+signed_T   = 200                # signed-win resamples (combined point < cov-only point)
+signed_n   = 6000               # moderate-n draw size for the signed win
+n_big      = 16000              # well-powered draw size for the interval non-overlap
+N_disjoint = 15                 # seeds for the interval-disjoint check (require 100%)
+track_tol  = 0.01               # |combined point-estimate - R_T| tracking tolerance
+# Ill-conditioning (hard gate 6): merged classes => near-singular Ĉ_S.
+illcond_means = [-0.3, 0.0, 0.3]
+illcond_n     = 1500
+# Reported diagnostics.
+oracle_n    = 2000000           # large-sample MC for the known accepted risk / coverage
+kappa_seps  = [2.5, 1.8, 1.2, 0.7, 0.3]   # K=3 class-separation degradation grid (kappa monotone up)
+consistency_n = 20000           # sample for the q̂_T vs Ĉ_S p̂_T anti-causal check
+neff_p_t    = [[0.6, 0.4], [0.8, 0.2], [0.95, 0.05]]   # increasingly extreme prevalence shift
+neff_n      = 8000
+cov_T       = 200               # trials for the synthetic interval-coverage report (prereg §6.8)
+mapls_grid  = [50, 100, 300]    # small-m target sizes for the MAPLS ablation
+mapls_T     = 60                # trials per small-m cell
+mapls_alpha = 6.0               # Dirichlet concentration scale for MAPLS (alpha = 1 + mapls_alpha*p_S)
+entangle_n  = 30000             # sample for the factorization-entanglement diagnostic
+
+[seed]
+base = 20260702                 # np.random.default_rng base seed (build_gates.md §3)
