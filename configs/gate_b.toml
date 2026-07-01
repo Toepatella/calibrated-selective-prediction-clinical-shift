@@ -1,0 +1,56 @@
+# Gate-B run config -- the "proposed" numeric budgets/counts for the covariate-
+# shift rung. As with configs/gate_a.toml, build_gates.md §5 flags these as
+# declared-fixed-in-advance (prereg §6.2/§6.7/§6.8) but NOT pinned to numbers in
+# the docs; committing them here makes the Gate-B gate authoritative and auditable
+# (build_gates.md §5 "Open questions").
+#
+# EVERY value is a PROPOSED engineering choice, not a doc constant, and not a
+# clinical/deployment claim -- it parameterizes a SYNTHETIC wiring check of the
+# domain-discriminator covariate weight w_cov(x) under a KNOWN covariate shift.
+
+[budgets]
+alpha_acc    = 0.1    # target accepted-region risk (carried from Gate A)   (prereg §6.2)
+delta        = 0.1    # PAC / interval confidence: property holds w.p. >= 1-delta
+coverage_min = 0.1    # degeneracy floor; below => flagged, NEVER gated       (prereg §6.4)
+w_max        = 8.0    # covariate-weight clip / routing cap                   (method_note §1.5.1)
+
+[shift]
+# Gaussian covariate shift with INVARIANT p(y|x): x ~ N(mu_d, 1); mu_S = 0.
+# mu_tar < 0 concentrates the target in the low-x / low-error tail, so the
+# covariate-corrected Hájek risk lands BELOW the naive source-level estimate
+# (the "weighted < naive" signed win of build_gates.md §5). The location shift
+# makes log w_cov*(x) linear in x, so the logistic discriminator is well-specified
+# and recovers the oracle ratio at large sample.
+mu_tar = -0.7         # target mean (source mean fixed at 0)
+base   = 0.05         # error-model floor r(x) = base + slope*sigmoid(k*x)
+slope  = 0.7          # error-model amplitude (r in [base, base+slope] = [0.05, 0.75])
+k      = 2.0          # error-model steepness in x
+tau0   = 0.6          # fixed accept region {u <= tau0} = {x <= Phi^-1(tau0)} (matched answer rate)
+
+[discriminator]
+n_splits = 5          # K-fold cross-fitting folds for d(x)                   (method_note §1.5, §3.4)
+l2       = 1.0        # L2 penalty on the logistic discriminator (intercept unpenalized)
+
+[monte_carlo]
+# Signed-win check (weighted point-estimate < naive point-estimate): moderate n,
+# many resamples -- a repeatable measured restoration.
+n_src_mc   = 6000     # source/target draw size per signed-win resample
+T_signed   = 200      # signed-win resample count
+# Interval non-overlap check (weighted WSR UCB < naive WSR LCB): importance
+# weighting inflates variance, so this is read on WELL-POWERED draws (honest --
+# the disjointness must survive the true n_eff cost of reweighting, not be bought
+# by under-powering). Disjoint in ALL N_disjoint seeds at n_src_big (verified:
+# min margin 0.012 over 60 seeds at 12000; n_src_big=16000 widens it to ~0.019).
+n_src_big   = 16000   # source/target draw size for the interval-disjoint check
+N_disjoint  = 15      # seeds for the interval-disjoint check (require 100%)
+# Oracle-tracking check (w_hat tracks w_cov*): large-sample, error shrinks with n.
+track_grid  = [1000, 5000, 20000]   # discriminator fit sizes n_S = n_T
+track_ref   = 20000   # fresh source points scored to compare w_hat vs oracle
+track_T     = 40      # MC trials averaged per grid point
+track_tol   = 0.1     # mean |log w_hat - log w_cov*| pass line on unclipped mass
+# Interval-coverage diagnostic (prereg §6.8) and clip-bias sweep.
+cov_T       = 300     # trials for the synthetic interval-coverage report
+wmax_grid   = [2.0, 4.0, 8.0, 16.0]   # clip-bias sensitivity sweep
+
+[seed]
+base = 20260701       # np.random.default_rng base seed (build_gates.md §3)

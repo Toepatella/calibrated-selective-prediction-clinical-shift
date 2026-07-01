@@ -31,7 +31,16 @@ import math
 import numpy as np
 from scipy.stats import binom
 
-__all__ = ["wsr_ucb", "hb_ucb", "rcps_lhat", "binom_cdf"]
+__all__ = [
+    "wsr_ucb",
+    "hb_ucb",
+    "rcps_lhat",
+    "binom_cdf",
+    "hajek_risk",
+    "kish_n_eff",
+    "wsr_ucb_weighted",
+    "wsr_lcb_weighted",
+]
 
 
 def binom_cdf(k, n, p):
@@ -115,3 +124,115 @@ def rcps_lhat(cal_table, lambdas, alpha, delta, ucb_fn=wsr_ucb):
         if ucb_fn(cal_table[:, j], delta) >= alpha:
             return lambdas[max(j - 1, 0)]
     return lambdas[-1]
+
+
+# =========================================================================== #
+# Weighted (Hájek) path -- Stage B onward (covariate/label shift).             #
+# =========================================================================== #
+# From Stage B the calibration points are drawn from the source but the target
+# risk is the estimand, so every contribution is reweighted by an estimated
+# importance weight ``w`` (``ŵ_cov`` at Gate B; the ``Ẑ``-combined weight at
+# Gate C). The reported risk is the SELF-NORMALIZED (Hájek) weighted risk
+#
+#     R̂_w = Σ (w · ℓ) / Σ w                                   (method_note §1.7)
+#
+# so the unknown ``E[w] = 1`` cancels. The confidence bound is the same
+# Waudby-Smith & Ramdas hedged-capital betting construction as ``wsr_ucb``,
+# generalized to weighted observations: with the weights scaled by their clip
+# cap ``w_max`` into ``W = w/w_max ∈ [0, 1]``, the per-step betting increment is
+# ``W_i·(ℓ_i − R)`` (whose conditional mean is zero exactly at the population
+# Hájek risk ``R = E[wℓ]/E[w]``), so the capital process is a non-negative
+# martingale at the truth and Ville's inequality gives a valid ``(1−δ)`` bound
+# on the weighted risk of the *plug-in* weights. This is a bound on the
+# functional of the ESTIMATED weights; no distribution-free coverage certificate
+# is claimed for the deployed weight (``method_note §1.5``, §7.1 -- the weight is
+# estimated and clinical shift is not pure covariate shift; Gate B measures the
+# residual, it does not certify it).
+
+
+def hajek_risk(losses, weights):
+    """Self-normalized (Hájek) weighted risk ``Σ(w·ℓ)/Σw`` (``method_note §1.7``).
+
+    losses, weights : array-like aligned per point; losses in [0, 1], weights >= 0.
+    Returns NaN when the weights sum to zero (nothing to average).
+    """
+    l = np.asarray(losses, dtype=float)
+    w = np.asarray(weights, dtype=float)
+    sw = float(w.sum())
+    return float(np.sum(w * l) / sw) if sw > 0.0 else float("nan")
+
+
+def kish_n_eff(weights):
+    """Kish effective sample size ``(Σw)²/Σw²`` (``method_note §1.7``; diagnostic).
+
+    A REPORTED reliability diagnostic, never a gate: it collapses toward 1 when a
+    single weight dominates and equals ``n`` for uniform weights.
+    """
+    w = np.asarray(weights, dtype=float)
+    s = float(w.sum())
+    s2 = float(np.sum(w * w))
+    return float(s * s / s2) if s2 > 0.0 else 0.0
+
+
+def _wsr_weighted_nu(losses, W, delta):
+    """Predictable hedged-capital betting fractions for the weighted risk.
+
+    Mirrors ``wsr_ucb``'s predictable mixture but on the weighted residual
+    ``W·(ℓ − μ̂)`` with ``μ̂`` the running Hájek mean; the variance estimate is
+    lagged by one step so each ``ν_i`` depends only on points ``1..i−1`` (hence is
+    predictable, the martingale requirement). ``W ∈ [0, 1]`` and ``ν ∈ [0, 1]`` so
+    every betting factor ``1 ± ν·W·(ℓ − R)`` stays strictly positive on the open
+    grid ``R ∈ (0, 1)``.
+    """
+    n = len(losses)
+    cw = np.cumsum(W)
+    cwl = np.cumsum(W * losses)
+    mhat = (cwl + 0.5) / (cw + 1.0)                        # running Hájek mean, mild prior
+    sig2 = (np.cumsum(W * (losses - mhat) ** 2) + 0.25) / (cw + 1.0)
+    sig2 = np.concatenate([[0.25], sig2[:-1]])             # predictable (lag by one)
+    return np.minimum(np.sqrt(2 * math.log(1 / delta) / n / sig2), 1.0)
+
+
+def wsr_ucb_weighted(losses, weights, delta, w_max):
+    """WSR hedged-capital upper ``(1−δ)`` bound on the Hájek weighted risk.
+
+    losses, weights : per-point losses in [0, 1] and importance weights in
+        ``[0, w_max]`` (already clipped at the routing cap ``w_max``).
+    Returns the largest weighted risk ``R`` not yet rejected at level ``delta`` --
+    the weighted analogue of ``wsr_ucb`` (which is the ``w ≡ 1`` special case up to
+    the predictable-mixture bookkeeping). Genuinely variance-adaptive: it is the
+    betting bound on the weighted estimator, never a range-only ``[0, 1]`` fallback.
+    """
+    x = np.asarray(losses, dtype=float)
+    w = np.asarray(weights, dtype=float)
+    W = np.clip(w / w_max, 0.0, 1.0)
+    nu = _wsr_weighted_nu(x, W, delta)
+
+    def cap(R):                                            # increasing in R
+        return np.max(np.cumsum(np.log1p(nu * W * (R - x)))) + math.log(delta)
+
+    if cap(1 - 1e-9) < 0:
+        return 1.0
+    return _bisect(lambda R: -cap(R), 1e-9, 1 - 1e-9)
+
+
+def wsr_lcb_weighted(losses, weights, delta, w_max):
+    """WSR hedged-capital lower ``(1−δ)`` bound on the Hájek weighted risk.
+
+    The mirror of ``wsr_ucb_weighted``: the capital process bets that the true
+    weighted risk exceeds ``R``, so the returned value is the smallest risk not
+    rejected -- a valid ``(1−δ)`` lower confidence bound. Paired with the UCB it
+    forms the two-sided betting interval whose non-overlap is the ``prereg §6.7``
+    win-rule used at Gate B (weighted interval strictly below the naive interval).
+    """
+    x = np.asarray(losses, dtype=float)
+    w = np.asarray(weights, dtype=float)
+    W = np.clip(w / w_max, 0.0, 1.0)
+    nu = _wsr_weighted_nu(x, W, delta)
+
+    def cap(R):                                            # decreasing in R
+        return np.max(np.cumsum(np.log1p(nu * W * (x - R)))) + math.log(delta)
+
+    if cap(1e-9) < 0:
+        return 0.0
+    return _bisect(cap, 1e-9, 1 - 1e-9)
