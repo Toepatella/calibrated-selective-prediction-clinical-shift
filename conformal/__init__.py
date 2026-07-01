@@ -19,5 +19,12 @@ Stage C (label / prevalence-shift weights) is implemented:
                      ``Ẑ(x)`` and the combine identity ``ŵ = ŵ_lab·ŵ_cov/Ẑ`` (NOT the
                      product), plus the ``κ(Ĉ_S)`` conditioning and ``q̂_T`` vs ``Ĉ_S p̂_T``
                      consistency diagnostics (method_note §1.5, §3.3, §3.4 step 2-3).
-Later stages (budget, crc, ltt) remain stubs.
+Stage D (integrated OOD budget & routing) is implemented:
+  * ``budget``    -- the far-OOD leakage-budget screen ``set_t_ood`` (spends ``α_ood``
+                     on the exposure set ``O``), the decoupled three-gate accept rule
+                     ``A(x) = (u≤τ)∩(o≤t_ood)∩(ŵ_cov≤w_max)`` and its three-way routing
+                     decomposition, and ``α_acc`` / ``α_ood`` as two SEPARATELY-measured
+                     budgets (NO certified additive split; method_note §1.5.1, §4.2,
+                     §4.3, §5.3). The OOD score ``o(x)`` itself lives in ``ood/detector``.
+Remaining stages (crc, ltt) remain stubs.
 """

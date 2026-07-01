@@ -1,0 +1,68 @@
+# Gate-D run config -- the "proposed" numeric budgets/counts for the integrated
+# OOD budget & routing rung (Mahalanobis++ screen, t_ood leakage budget, and the
+# decoupled three-gate accept rule A(x)). As with configs/gate_a/b/c.toml,
+# build_gates.md §7 flags these as declared-fixed-in-advance (prereg §6.2/§5.2/§6.8)
+# but NOT pinned to numbers in the docs; committing them here makes the Gate-D gate
+# authoritative and auditable (build_gates.md §7 "Open questions").
+#
+# EVERY value is a PROPOSED engineering choice, not a doc constant, and not a
+# clinical/deployment claim -- it parameterizes a SYNTHETIC wiring check of the OOD
+# screen and the decoupled routing rule under KNOWN in-scope-vs-far-OOD ground truth.
+
+[budgets]
+alpha_acc    = 0.1                 # accepted-region risk budget (carried from Gate A)   (prereg §6.2)
+delta        = 0.1                 # PAC / interval confidence: property holds w.p. >= 1-delta
+coverage_min = 0.1                 # degeneracy floor; below => flagged, NEVER gated      (prereg §6.4)
+w_max        = 8.0                 # covariate-weight clip / routing cap (carried from Gate B)
+alpha_ood    = [0.01, 0.05, 0.10]  # far-OOD leakage budgets spent by t_ood on O          (prereg §6.2)
+
+[features]
+# D-dim Gaussian features, K classes, shared tied covariance so the Mahalanobis GDA
+# model is EXACTLY correct in-distribution (build_gates.md §7). Class dims 0..K-1
+# separate the classes; noise dims K..D-2 (std=sd_noise) carry the far-OOD offset
+# ORTHOGONAL to the class signal; the last dim is the class-free covariate-shift coord.
+D           = 20
+K           = 5
+class_sep   = 4.0                  # class-centroid separation (well-separated => f confident)
+shift_delta = 2.0                  # covariate location shift on the class-free shift dim
+far_radius  = 20.0                 # far-OOD orthogonal shell radius (AUROC ~ 1.0; clean ID/OOD gap)
+near_radius = 5.0                  # near-OOD shell radius (partial ID overlap; reported worse)
+id_std      = 1.0                  # far/near-OOD class-dim spread (matches ID => no anti-corr.)
+sd_noise    = 0.5                  # std of the noise dims K..D-2 (class/shift dims have std 1)
+knn_k       = 10                   # kNN-OOD neighbour count (detector-agnostic ablation)
+energy_T    = 1.0                  # energy-score temperature (detector-agnostic ablation)
+tau0        = 0.3                  # accept region {u <= tau0}; ID is confident so ~all pass
+
+[monte_carlo]
+# HG1 -- Maha++ / plain-Lee cross-check vs a brute-force numpy reference (atol=1e-8).
+xcheck_seeds = 5
+xcheck_n     = 1500
+xcheck_atol  = 1e-8
+# HG2 -- far-tier AUROC of the primary o(x).
+auroc_T      = 200                 # resamples averaged
+auroc_n_id   = 2000
+auroc_n_ood  = 2000
+auroc_min    = 0.95                # proposed pass line (docs mandate reporting, not a number)
+# HG3 -- t_ood spends alpha_ood on O (within one scan step; vs the analytic curve).
+leak_fit_n   = 4000                # O draw used to SET t_ood
+leak_ref_n   = 20000               # fresh large O = the analytic leakage-vs-cutoff curve
+leak_seeds   = 10                  # seeds averaged for the out-of-sample leakage
+leak_tol     = 0.015               # |realized leakage - alpha_ood| tolerance (finite-O sampling)
+# HG4 -- the screen measurably reduces far-OOD leakage vs no screen.
+red_T        = 200                 # resamples
+red_n_ood    = 2000
+red_alpha    = 0.05                # alpha_ood at which the reduction is read
+# HG5/HG6 -- routing (sole-guard, decoupling); HG7 -- exact conjunction.
+probe_n      = 500                 # far-OOD-d0 / near-OOD probe counts
+group_n      = 400                 # per-mechanism group size in the decomposition pool
+conj_n       = 2000                # randomized (u,o,w,tau,t,w_max) inputs (>= 1000)
+# Reported diagnostics.
+exposure_seeds  = 3                # distinct O draws for t_ood exposure-set sensitivity
+collapse_dims   = 8                # noise dims squashed (var 1e-3) for the kappa/eff-rank check
+detector_fit_n  = 4000             # ID fit size for the detector across gates
+cov_T           = 200              # trials for the synthetic interval-coverage report (prereg §6.8)
+cov_n           = 6000             # per-trial in-scope draw for the interval-coverage report
+oracle_n        = 500000           # large-sample MC for the known accepted risk
+
+[seed]
+base = 20260703                    # np.random.default_rng base seed (build_gates.md §3)
