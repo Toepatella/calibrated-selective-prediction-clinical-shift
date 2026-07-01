@@ -1,0 +1,10 @@
+# Project-level pytest configuration for the synthetic build-gate ladder
+# (build_gates.md). `pythonpath` puts the repo root on sys.path so tests can
+# `import conformal` / `import ood`, and the `tests` dir so gate tests can import
+# their shared synthetic fixtures (`_synth`). No packaging/build backend is
+# declared here on purpose -- this is a research repo, not a distributable.
+
+[tool.pytest.ini_options]
+pythonpath = [".", "tests"]
+testpaths = ["tests"]
+addopts = "-ra"

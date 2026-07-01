@@ -1,0 +1,46 @@
+# Gate-A run config -- the "proposed" numeric budgets that build_gates.md §4 flags
+# as declared-fixed-in-advance (prereg §6.2 / §6.4 / §6.7) but NOT pinned to numbers
+# in the docs. Committing them here makes the Gate-A gate authoritative and
+# auditable (build_gates.md §4 "Open questions": the values below must be committed
+# to a run config before the gate is authoritative).
+#
+# EVERY value here is a PROPOSED engineering choice, not a doc constant. None of it
+# is a clinical or deployment claim -- it parameterizes a synthetic wiring check of
+# RCPS under exchangeability only.
+
+[budgets]
+alpha_acc    = 0.1    # target accepted-region risk alpha_acc          (prereg §6.2)
+delta        = 0.1    # PAC confidence: property holds w.p. >= 1 - delta (prereg §6.2)
+coverage_min = 0.1    # degeneracy floor; below => flagged, NEVER gated  (prereg §6.4)
+
+[monte_carlo]
+n_cal     = 2000      # calibration points per resample (PAC / trap gates)
+T         = 1000      # resample/trial count for PAC + WSR-validity checks
+# rc_points raised from build_gates §4's illustrative 200000 -> 1e6 so the <=0.01
+# risk tolerance holds ACROSS seeds at the tightest tau-quantile (q=1/50 -> only
+# ~2% of points accepted); at 200000 the tightest cell's Monte-Carlo noise made the
+# hard gate fail on ~5% of seeds. N is a proposed engineering count (build_gates §3).
+rc_points = 1000000   # points for the analytic risk-coverage match gate
+rc_grid   = 50        # number of tau-quantile grid points in that gate
+
+[error_model]
+# r(u) = sum_k coeffs[k] * u^k on u ~ Uniform(0,1).
+# Primary: linear r(u) = 0.05 + 0.30 u  ->  R(tau) = 0.05 + 0.15 tau, marginal 0.20.
+# Chosen so the true alpha_acc=0.1 accepted-risk threshold sits in the interior
+# (R(tau)=0.1 at tau*=1/3) with a healthy accepted region, and the marginal risk
+# (0.20) sits well above alpha_acc so the full-marginal selection-bias trap
+# over-certifies clearly.
+coeffs = [0.05, 0.30]
+
+# Extra monotone families swept by the risk-coverage gate so a pass cannot be an
+# artifact of one construction (varying base rate, slope, and curvature).
+families = [
+    [0.05, 0.30],       # linear, primary
+    [0.02, 0.16],       # linear, low base rate
+    [0.10, 0.40],       # linear, higher base + slope
+    [0.0,  0.5],        # linear through the origin
+    [0.05, 0.0, 0.45],  # quadratic: r = 0.05 + 0.45 u^2 (monotone, convex)
+]
+
+[seed]
+base = 20260630        # np.random.default_rng base seed (build_gates.md §3)
