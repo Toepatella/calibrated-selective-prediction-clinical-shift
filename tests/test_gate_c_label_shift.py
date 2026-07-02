@@ -7,8 +7,11 @@ Gate-A exchangeable spine and the Gate-B covariate weight ``ŵ_cov(x)``:
     projection + floor/ceiling,
   * MLLS + BCTS prevalence estimation (Alexandari, Kundaje & Shrikumar 2020),
   * the per-``x`` double-count corrector ``Ẑ(x) = Σ_{y'} ŵ_lab(y')·σ̃(f(x))_{y'}``
-    and the combine identity ``ŵ(x,y) = ŵ_lab(y)·ŵ_cov(x)/Ẑ(x)`` -- **not** the
-    naïve product,
+    (the Saerens, Latinne & Decaestecker 2002 prior-shift normalizer) and the
+    combine identity ``ŵ(x,y) = ŵ_lab(y)·ŵ_cov(x)/Ẑ(x)`` -- **not** the naïve
+    product. This identity is **not novel**: it is Tasche (2022, arXiv:2207.14514)
+    Thm 4 / Cor 4 at ``ρ=1``, exact under the invariant-density-ratio condition
+    (STRICTLY STRONGER than the He et al. 2022 FJS sense ``w(x,y)=U(x)·V(y)``),
 
 and verifies -- on data with a KNOWN synthetic prevalence shift
 (``tests/_synth.py::LabelShiftMixture``) -- that each cited method reproduces its
@@ -42,6 +45,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from scipy.stats import norm
 
 from conformal.rcps import (
     hajek_risk,
@@ -64,7 +68,10 @@ from conformal.label_shift import (
     combine_weights,
     kappa_cs,
     bbse_consistency,
+    measure_slice_joint_weight,
+    residual_on_labeled_target,
 )
+from conformal.weights import fit_discriminator
 from conformal.folds import assert_group_disjoint
 from _synth import LabelShiftMixture
 
@@ -162,7 +169,11 @@ def test_mlls_bcts_recovers_prevalence():
 
     build_gates.md §6 gate 2: over MC trials, ``max_y|p̂_T - p_T| <= mlls_prev_tol``
     at large sample, and ``max_y|ŵ_lab,MLLS - ŵ_lab,BBSE| <= mlls_bbse_tol`` (both
-    estimators target the same identifiable ratio). The frozen classifier is
+    estimators agree HERE because this K=2 pure-label fixture satisfies the
+    ``P(ŷ|y)`` invariance BBSE needs; they are NOT interchangeable in general --
+    under a classifier-visible factorizable shift BBSE is biased while MLLS+BCTS,
+    the recommended estimator under the premise, stays consistent, see
+    label_shift.bbse_weights). The frozen classifier is
     DELIBERATELY miscalibrated (temperature + bias); BCTS must restore calibration
     for MLLS to be consistent (method_note §1.5).
     """
@@ -389,6 +400,237 @@ def test_simplex_floor_keeps_wlab_finite():
     assert Z.min() > 0.0
 
 
+def test_discriminator_single_domain_fold_raises_loud():
+    """HARD (F5): a single-domain training fold makes ``fit_discriminator`` fail LOUD.
+
+    method_note §1.5 / §1.7: group-level cross-fitting needs every fold's TRAINING split
+    to contain BOTH domains. In the natural multi-site layout (disjoint source/target
+    site ids) a fold can hold out an entire domain's groups, leaving the discriminator
+    trained on one domain: it then converges to a constant posterior and ``ŵ_cov``
+    collapses to all-equal ``w_max`` -- Kish ``n_eff`` reads ``n`` (maximally healthy) while
+    the covariate correction is SILENTLY nulled to an unweighted mean. That degeneracy is
+    unrecoverable, so the estimator must ASSERT rather than return degenerate weights.
+
+    This gate pins the LOUD behaviour on two shapes and confirms a healthy multi-group /
+    multi-fold split is untouched (so the guard never fires on a legitimate Gate-B-style
+    call). It measures/hardens honesty -- it adds NO coverage guarantee.
+    """
+    w_max = 20.0
+    n = 300
+    rs = np.random.default_rng(CFG.seed + 17000)
+    X_src = rs.normal(0.0, 1.0, size=(n, 2))
+    X_tar = rs.normal(1.5, 1.0, size=(n, 2))
+
+    # (a) one group per domain: group-level cross-fitting is impossible in principle
+    # (every training split is single-domain, for ANY n_splits) -> must raise LOUD.
+    gs_one = np.zeros(n, dtype=int)
+    gt_one = np.ones(n, dtype=int)
+    with pytest.raises(AssertionError):
+        fit_discriminator(X_src, X_tar, w_max=w_max, n_splits=5, seed=CFG.seed,
+                          groups_src=gs_one, groups_tar=gt_one)
+
+    # (b) natural multi-site shape: 2 source sites + 2 target sites (disjoint ids),
+    # n_splits=2. Without the guard this SILENTLY returns every source weight == w_max
+    # (9/30 seeds in the review; seed 0 is degenerate) -> must raise LOUD instead.
+    gs_site = np.where(np.arange(n) < n // 2, 0, 1)
+    gt_site = np.where(np.arange(n) < n // 2, 2, 3)
+    with pytest.raises(AssertionError):
+        fit_discriminator(X_src, X_tar, w_max=w_max, n_splits=2, seed=0,
+                          groups_src=gs_site, groups_tar=gt_site)
+
+    # positive control: a healthy split (each point its own group, K folds) trains on
+    # BOTH domains in every fold, so the guard is SILENT and honest weights are returned
+    # (this is exactly the Gate-B default-group usage). Weights must not be degenerate.
+    disc = fit_discriminator(X_src, X_tar, w_max=w_max, n_splits=5, seed=CFG.seed)
+    w_src = disc.oof_weights()[disc.domain == 0]
+    assert np.isfinite(w_src).all()
+    assert not np.allclose(w_src, w_src[0])              # a real, non-degenerate correction
+    print(f"[disc-degeneracy] one-group-per-domain and 2+2-site/n_splits=2 both raise LOUD; "
+          f"healthy K-fold split returns non-degenerate w_cov "
+          f"(median={np.median(w_src):.3f}, max={w_src.max():.3f}).")
+
+
+def test_factorizable_means_invariant_density_ratio_not_fjs():
+    """HARD (F12): "factorizable" here = the INVARIANT-DENSITY-RATIO condition, which
+    is STRICTLY STRONGER than the He et al. 2022 / Tasche FJS sense ``w(x,y)=U(x)·V(y)``.
+
+    The repo's own entangled ``x1``-tilt regime factorizes EXACTLY in the FJS sense
+    (``w(x,y)=U(x)·V(y)`` to machine precision) yet BREAKS the ``Ẑ``-combine -- so the
+    combine identity (Tasche 2022 Thm 4/Cor 4 at ρ=1) needs the stronger condition
+    ``p_T(x|y)/p_S(x|y)`` class-free on overlapping support, and the two senses of
+    "factorizable" must not be conflated (method_note §3.3, §7.4). Guards the
+    terminology fix for review finding F12.
+    """
+    gene = _gen_k2(tilt="x1", theta=CFG.k2.theta_ent)      # entangled: p(x1|y) moves with the shift
+    r = np.random.default_rng(CFG.seed + 17500)
+    X, y, _, _, _ = gene.sample(40000, r, "S")
+    x1, x2 = X[:, 0], X[:, 1]
+    m = np.asarray(CFG.k2.means, dtype=float)
+    th = float(CFG.k2.theta_ent)
+    p_s = np.asarray(CFG.k2.p_s, dtype=float)
+    p_t = np.asarray(CFG.k2.p_t, dtype=float)
+
+    # FJS test w(x,y)=U(x)·V(y): log w_joint(x,y) is additive in x and y iff
+    # d(x) := log w_joint(x,1) - log w_joint(x,0) is CONSTANT in x (K=2).
+    def _logwj(k):
+        lp_s = norm.logpdf(x1 - m[k]) + norm.logpdf(x2) + np.log(p_s[k])
+        lp_t = norm.logpdf(x1 - (m[k] + th)) + norm.logpdf(x2) + np.log(p_t[k])
+        return lp_t - lp_s
+    fjs_defect = float(np.std(_logwj(1) - _logwj(0)))
+
+    # The Ẑ-combine (invariant-density-ratio identity) BREAKS on the SAME regime.
+    w_joint = gene.oracle_w_joint(X, y)
+    fac = combine_weights(gene.oracle_w_lab()[y], gene.oracle_w_cov(X), gene.oracle_Z(X))
+    combine_div = float(np.mean((np.log(fac) - np.log(w_joint)) ** 2))
+
+    print(f"[factorizable-vs-FJS] FJS defect std(log w(x,1)-log w(x,0))={fjs_defect:.2e} "
+          f"(~0 => FJS-factorizable w=U(x)V(y)); Zdivide combine divergence={combine_div:.4f} "
+          f"(>0 => the STRONGER invariant-density-ratio condition FAILS)")
+    assert fjs_defect < 1e-9      # w(x,y)=U(x)V(y) holds to machine precision (FJS-factorizable) ...
+    assert combine_div > 1e-2     # ... yet the Ẑ-combine is materially violated (needs the stronger cond.)
+
+
+def test_Z_equals_one_needs_wlab_one_not_pure_covariate():
+    """HARD (F12): ``Ẑ ≡ 1`` requires ``w_lab ≡ 1``, NOT merely "pure covariate shift".
+
+    On a prevalence-shifted mixture source (``w_lab*=(1.8,0.2)``) ``max_x|Z-1|`` is far
+    from 0; it collapses to machine zero only once ``w_lab ≡ 1`` -- the qualifier the
+    module header must carry (review finding F12; guards the header fix).
+    """
+    genl = _gen_k2()                                          # p_t=(.9,.1) => w_lab=(1.8,0.2)
+    r = np.random.default_rng(CFG.seed + 18000)
+    Xs, _, _, _, _ = genl.sample(40000, r, "S")
+    max_dev_shift = float(np.max(np.abs(genl.oracle_Z(Xs) - 1.0)))
+    genc = _gen_k2(p_t=CFG.k2.p_s, tilt="x2", theta=CFG.k2.theta_cov)   # w_lab==1
+    max_dev_wlab1 = float(np.max(np.abs(genc.oracle_Z(Xs) - 1.0)))
+    print(f"[Z-eq-1] max|Z-1| under prevalence shift (w_lab=(1.8,0.2))={max_dev_shift:.4f} "
+          f">> when w_lab==1={max_dev_wlab1:.2e}")
+    assert max_dev_shift > 0.5       # Z is NOT ≡ 1 merely because covariates are the only tilt
+    assert max_dev_wlab1 <= 1e-6     # Z ≡ 1 exactly iff w_lab ≡ 1
+
+
+def test_dtarlab_residual_measures_factorization_premise():
+    """HARD (F17): the ``D_tar^lab`` residual MEASURES the factorizable premise from a labeled slice.
+
+    build_gates.md §6 honesty rail / method_note §1.7, §3.4 step 3, §7; prereg §7: the
+    factorizable-shift premise's residual is *measured* on a small LABELED target slice
+    ``D_tar^lab`` -- never certified. This gate exercises the real shipped pathway
+    (:func:`residual_on_labeled_target` + :func:`measure_slice_joint_weight`), which
+    consumes labeled target pairs ``(X, y) ∼ P_T`` and REPORTS (a) the residual risk
+    degradation of the factorized combined weight and (b) its divergence from a joint
+    weight measured DIRECTLY on the slice (from the SAMPLE, never ``oracle_w_joint``).
+    Both separate the FACTORIZABLE (x2 tilt) from the ENTANGLED (x1 tilt) regime, so
+    the premise is falsifiable per pair from real labeled data. MEASURES/REPORTS only;
+    it asserts SEPARATION and finiteness, never a certificate or an identification.
+    """
+    tau0 = CFG.k2.tau0
+
+    def _measure(tilt, theta):
+        gen = _gen_k2(tilt=tilt, theta=theta)
+        r = np.random.default_rng(CFG.seed + 19000)
+        # labeled SOURCE accepted cohort -> PREDICT target accepted risk under factorized w
+        Xs, ys, _, ls, us = gen.sample(CFG.mc.dtarlab_src_n, r, "S")
+        accs = us <= tau0
+        wl_s = gen.oracle_w_lab()[ys]
+        wfac_s = combine_weights(wl_s, gen.oracle_w_cov(Xs), gen.oracle_Z(Xs))
+        # small labeled TARGET slice D_tar^lab (accepted region), with its factorized w
+        Xt, yt, _, lt, ut = gen.sample(CFG.mc.dtarlab_m, r, "T")
+        acct = ut <= tau0
+        Xt_a, yt_a, lt_a = Xt[acct], yt[acct], lt[acct]
+        wl_t = gen.oracle_w_lab()[yt_a]
+        wfac_t = combine_weights(wl_t, gen.oracle_w_cov(Xt_a), gen.oracle_Z(Xt_a))
+        rep = residual_on_labeled_target(
+            wfac_s, ls, accs, Xs, ys, Xt_a, yt_a, wfac_t, gen.p_s, gen.K)
+        risk_emp = float(lt_a.mean())                    # empirical target accepted risk on the slice
+        risk_gap = abs(rep["risk_plugin"] - risk_emp)
+        return rep, risk_gap
+
+    rep_f, gap_f = _measure("x2", CFG.k2.theta_cov)      # factorizable (⊥ label signal)
+    rep_e, gap_e = _measure("x1", CFG.k2.theta_ent)      # entangled (along label signal)
+    print(f"[dtarlab/residual] factorizable: divergence={rep_f['divergence']:.4f} "
+          f"risk_gap={gap_f:.4f} (m_lab={rep_f['m_lab']}, wlab_slice={np.round(rep_f['w_lab_slice'],3)}) | "
+          f"entangled: divergence={rep_e['divergence']:.4f} risk_gap={gap_e:.4f}")
+    # the slice-measured joint weight is built from the SAMPLE, never the oracle
+    genp = _gen_k2(tilt="x2", theta=CFG.k2.theta_cov)
+    Xps, yps, _, _, _ = genp.sample(200, np.random.default_rng(CFG.seed + 19001), "S")
+    Xpt, ypt, _, _, _ = genp.sample(200, np.random.default_rng(CFG.seed + 19002), "T")
+    w_joint_slice, _ = measure_slice_joint_weight(Xps, yps, Xpt, ypt, genp.p_s, genp.K)
+    assert np.all(np.isfinite(w_joint_slice))            # plumbing: the slice estimator runs
+    # (a) divergence: ~0 when factorizable, materially larger when entangled
+    assert np.isfinite(rep_f["divergence"]) and np.isfinite(rep_e["divergence"])
+    assert rep_f["divergence"] <= CFG.mc.dtarlab_div_fac
+    assert rep_e["divergence"] >= CFG.mc.dtarlab_div_mult * max(rep_f["divergence"], 1e-12)
+    # (b) residual risk degradation: small when factorizable, materially larger when entangled
+    assert gap_f <= CFG.mc.dtarlab_gap_fac
+    assert gap_e >= CFG.mc.dtarlab_gap_mult * max(gap_f, 1e-12)
+
+
+def test_estimated_combined_pipeline_documents_gap():
+    """HARD (F3): the FULLY ESTIMATED combined-regime pipeline, honest gap budget.
+
+    Every prior combined-regime check (HG3 (c), HG4, the 5-arm / entanglement
+    diagnostics) feeds ORACLE ``w_cov``/``Ẑ``/``w_lab`` into ``combine_weights`` and
+    lands at ~1e-16 (``zdiv_tol_comb=0.02``). That validates the *identity*, not the
+    *estimated pipeline*. This gate runs the pipeline the method actually deploys --
+    ``conformal.weights.fit_discriminator`` (cross-fit ``ŵ_cov``) + BBSE ``ŵ_lab`` +
+    BCTS ``Ẑ`` -- on the factorizable ``x2`` tilt, and asserts against an HONEST
+    budget that DOCUMENTS the estimated-vs-oracle gap rather than hiding it
+    (``build_gates.md §6``; F3):
+
+      * the estimated mean weight error is MATERIALLY above the oracle-input budget
+        (``est_err_lo <= err_est <= est_err_hi``; the gap is real, not ~oracle),
+      * on the SAME slice the oracle-input error stays tiny (``<= est_oracle_max``;
+        the wiring is correct -- the gap is estimation, not a bug),
+      * the gap is dominated by DISCRIMINATOR misspecification: swapping the ORACLE
+        ``w_cov`` back in (keeping estimated ``ŵ_lab``/``Ẑ``) removes
+        ``>= est_disc_share`` of it. The linear-logit discriminator family cannot
+        represent the ``log Ẑ(x1)`` term in ``log w_cov``, so the oracle ``w_cov``
+        validated at Gate B does NOT transfer to the Gate-C combined regime.
+
+    This is a MEASUREMENT, not a certificate: it asserts the gap's size/attribution,
+    never that the estimated weight is close to truth.
+    """
+    genf = _gen_k2(tilt="x2", theta=CFG.k2.theta_cov)
+    r = np.random.default_rng(CFG.seed + 20000)
+    # (1) estimated ŵ_cov via the cross-fit domain discriminator (conformal.weights)
+    Xs, _, _, _, _ = genf.sample(CFG.mc.est_n_disc, r, "S")
+    Xt, _, _, _, _ = genf.sample(CFG.mc.est_n_disc, r, "T")
+    disc = fit_discriminator(Xs, Xt, w_max=CFG.b.w_lab_max, seed=CFG.seed % 1000)
+    # (2) estimated ŵ_lab via BBSE on a disjoint source fold + target predictions
+    Xb, yb, yhb, _, _ = genf.sample(CFG.mc.est_n_bbse, r, "S")
+    _, _, yht, _, _ = genf.sample(CFG.mc.est_n_bbse, r, "T")
+    Cb = confusion_matrix(yb, yhb, genf.K)
+    wlab, _ = bbse_weights(Cb, pred_hist(yht, genf.K), genf.p_s,
+                           CFG.b.w_lab_min, CFG.b.w_lab_max)
+    # (3) estimated Ẑ via a BCTS-recalibrated softmax
+    T, b = fit_bcts(genf.logits(Xb), yb)
+    # evaluation slice (disjoint draw): compare estimated vs oracle combined weight
+    Xe, ye, _, _, _ = genf.sample(CFG.mc.est_n_eval, r, "S")
+    w_star = genf.oracle_w_joint(Xe, ye)
+    wc_est = disc.weights(Xe)
+    Ze = z_corrector(wlab, recalibrate_softmax(genf.logits(Xe), T, b))
+    w_est = combine_weights(wlab[ye], wc_est, Ze)
+    err_est = float(np.mean(np.abs(w_est - w_star)))
+    # oracle-input error on the SAME slice (identity is exact => ~0)
+    w_or = combine_weights(genf.oracle_w_lab()[ye], genf.oracle_w_cov(Xe),
+                           genf.oracle_Z(Xe))
+    err_or = float(np.mean(np.abs(w_or - w_star)))
+    # attribution: oracle ŵ_cov but estimated ŵ_lab + Ẑ (isolates the discriminator)
+    w_mix = combine_weights(wlab[ye], genf.oracle_w_cov(Xe), Ze)
+    err_mix = float(np.mean(np.abs(w_mix - w_star)))
+    disc_share = (err_est - err_mix) / err_est if err_est > 0 else 0.0
+    print(f"[estimated-combined] mean|ŵ - w*|: estimated={err_est:.4f} "
+          f"(budget [{CFG.mc.est_err_lo}, {CFG.mc.est_err_hi}]) vs oracle-input={err_or:.2e} "
+          f"(<= {CFG.mc.est_oracle_max}); discriminator share of gap={disc_share:.3f} "
+          f"(>= {CFG.mc.est_disc_share})")
+    # the estimated gap is REAL (materially above the ~oracle budget) and bounded
+    assert CFG.mc.est_err_lo <= err_est <= CFG.mc.est_err_hi, err_est
+    # the identity itself is exact on this slice -- the gap is estimation, not a wiring bug
+    assert err_or <= CFG.mc.est_oracle_max, err_or
+    # and the gap is dominated by discriminator misspecification (does NOT transfer from Gate B)
+    assert disc_share >= CFG.mc.est_disc_share, disc_share
+
+
 def test_fold_disjointness_group_level():
     """HARD (gate 7): group-id fold-disjointness across the five G-C folds.
 
@@ -410,6 +652,154 @@ def test_fold_disjointness_group_level():
     # negative control: an overlapping split must raise
     with pytest.raises(AssertionError):
         assert_group_disjoint(D_bbse_src=[1, 2, 3], D_tar=[3, 4, 5])
+
+
+def test_bbse_singular_confusion_raises_clear_error():
+    """HARD (F4): a singular Ĉ_S raises a CLEAR diagnostic, not a bare LinAlgError.
+
+    Invertibility of Ĉ_S is a documented BBSE precondition (method_note §1.5). The
+    shipped config is provably safe (well-conditioned Ĉ_S), but when a class is never
+    predicted (a zero row) or never a true label (a zero column) the raw
+    ``np.linalg.solve`` raises an opaque ``numpy.linalg.LinAlgError`` BEFORE the
+    ``κ(Ĉ_S)`` / ``σ_min`` diagnostic can report it -- an inconsistent-hardening gap
+    (``kappa_cs`` already handles ``σ_min = 0`` gracefully). This gate pins the fix:
+    ``bbse_weights`` must raise a ``ValueError`` naming the non-invertibility and the
+    ``σ_min`` diagnostic, WITHOUT changing the safe (invertible) path.
+    """
+    q = pred_hist(np.array([0, 1, 0, 1]), 2)
+    p_S = np.asarray(CFG.k2.p_s, dtype=float)
+    # zero row: class 1 is never predicted -> Ĉ_S has an all-zero row -> singular.
+    C_zero_row = confusion_matrix(np.array([0, 0, 1, 1]), np.array([0, 0, 0, 0]), 2)
+    assert np.allclose(C_zero_row[1], 0.0)               # the degenerate row
+    with pytest.raises(ValueError, match=r"singular|invertible"):
+        bbse_weights(C_zero_row, q, p_S, CFG.b.w_lab_min, CFG.b.w_lab_max)
+    # zero column: class 1 is never a TRUE label -> Ĉ_S has an all-zero column.
+    C_zero_col = confusion_matrix(np.array([0, 0, 0, 0]), np.array([0, 1, 0, 1]), 2)
+    assert np.allclose(C_zero_col[:, 1], 0.0)
+    with pytest.raises(ValueError, match=r"singular|invertible"):
+        bbse_weights(C_zero_col, q, p_S, CFG.b.w_lab_min, CFG.b.w_lab_max)
+    # SAFE path unchanged: a well-conditioned Ĉ_S still returns a finite w_lab.
+    C_ok = confusion_matrix(np.array([0, 0, 1, 1, 0, 1]), np.array([0, 1, 1, 1, 0, 0]), 2)
+    w_ok, p_ok = bbse_weights(C_ok, q, p_S, CFG.b.w_lab_min, CFG.b.w_lab_max)
+    assert np.all(np.isfinite(w_ok)) and abs(p_ok.sum() - 1.0) <= 1e-8
+    print("[bbse-singular] zero-row and zero-column Ĉ_S raise clear ValueError; "
+          "well-conditioned Ĉ_S unchanged")
+
+
+def test_confusion_matrix_rejects_out_of_range_labels():
+    """HARD (F16): ``confusion_matrix`` enforces its documented ``[0, K)`` label contract.
+
+    ``confusion_matrix`` is documented to take integer labels in ``[0, K)``, but
+    ``np.add.at`` would SILENTLY wrap a ``-1`` sentinel into class ``K-1`` (negative
+    indexing), whereas ``pred_hist`` already RAISES on the same input. Before any
+    real-data use, the two must agree: an out-of-range label is a ValueError, never a
+    silent miscount. The in-range (safe) path is unchanged.
+    """
+    # a -1 sentinel in y_true must RAISE (not wrap into class K-1) ...
+    with pytest.raises(ValueError):
+        confusion_matrix(np.array([0, 1, -1]), np.array([0, 1, 0]), 2)
+    # ... and pred_hist already raises on the same -1 (the behaviour we align to).
+    with pytest.raises(ValueError):
+        pred_hist(np.array([0, 1, -1]), 2)
+    # a label == K (also out of [0, K)) must RAISE.
+    with pytest.raises(ValueError):
+        confusion_matrix(np.array([0, 1, 2]), np.array([0, 1, 0]), 2)
+    # SAFE path unchanged: in-range labels build the same joint confusion as before.
+    C = confusion_matrix(np.array([0, 1, 0, 1]), np.array([0, 1, 1, 1]), 2)
+    assert abs(C.sum() - 1.0) <= 1e-12 and C.shape == (2, 2)
+    print("[cm-range] out-of-range labels (-1, K) raise ValueError; in-range unchanged")
+
+
+def test_bbse_confusion_orientation_is_load_bearing():
+    """HARD (F7, mutation-adequacy): BBSE recovery FAILS if ``Ĉ_S`` is transposed.
+
+    The shipped K=2 / K=3 recovery fixtures have a (near-)SYMMETRIC population joint
+    confusion ``C_S``, so solving ``Ĉ_Sᵀ⁻¹ q̂_T`` (or building the confusion with
+    ``ŷ``/``y`` swapped) recovers ``w_lab*`` just as well as the correct orientation --
+    gate 1 cannot tell the two apart. This gate pins the orientation down on a
+    deliberately ASYMMETRIC K=3 fixture (two overlapping low classes + one far class,
+    skewed source prior => ``max|C_S - C_Sᵀ| ~ 0.034``): the CORRECT orientation
+    recovers ``w_lab*`` (mean ``max_y|ŵ_lab - w_lab*| <= asym_tol``), and -- asserted
+    as a NEGATIVE CONTROL in the same regime -- solving on the transposed confusion
+    blows past that line. A reviewer can flip ``np.add.at(C, (y_pred, y_true), …)`` to
+    ``(y_true, y_pred)`` in ``confusion_matrix`` (or transpose ``C_S`` before the
+    solve) and watch THIS test go red. SYNTHETIC wiring / mutation-adequacy check;
+    proves nothing about deployment and adds no guarantee.
+    """
+    g = LabelShiftMixture(means=CFG.mc.asym_means, p_s=CFG.mc.asym_p_s,
+                          p_t=CFG.mc.asym_p_t, rho=CFG.mc.asym_rho)
+    wstar = g.oracle_w_lab()
+
+    # the fixture's population C_S really is asymmetric (else the mutant is invisible).
+    rC = np.random.default_rng(CFG.seed + 2700)
+    C_pop = g.confusion_S(rC, n=400_000)
+    confusion_asym = float(np.max(np.abs(C_pop - C_pop.T)))
+
+    err_ok, err_transpose = [], []
+    for t in range(CFG.mc.asym_T):
+        r = np.random.default_rng(CFG.seed + 2700 + t)
+        _, ys, yhs, _, _ = g.sample(CFG.mc.asym_n, r, "S")
+        _, _, yht, _, _ = g.sample(CFG.mc.asym_n, r, "T")
+        C = confusion_matrix(ys, yhs, g.K)
+        q = pred_hist(yht, g.K)
+        w_ok, _ = bbse_weights(C, q, g.p_s, CFG.b.w_lab_min, CFG.b.w_lab_max)
+        # NEGATIVE CONTROL: the same solve on the TRANSPOSED confusion (the F7 mutant).
+        w_bad, _ = bbse_weights(C.T, q, g.p_s, CFG.b.w_lab_min, CFG.b.w_lab_max)
+        err_ok.append(float(np.max(np.abs(w_ok - wstar))))
+        err_transpose.append(float(np.max(np.abs(w_bad - wstar))))
+    e_ok = float(np.mean(err_ok))
+    e_bad = float(np.mean(err_transpose))
+    print(f"[bbse-orient/asymK3] max|C_S - C_S^T|~{confusion_asym:.4f}; "
+          f"correct-orientation err={e_ok:.4f} (<= {CFG.mc.asym_tol}) vs "
+          f"transposed err={e_bad:.4f} (kills the mutant); w_lab*={wstar}")
+    # fixture is genuinely asymmetric (guards against a silent symmetric regression)
+    assert confusion_asym >= CFG.mc.asym_min_confusion_asym
+    # correct BBSE orientation recovers w_lab*
+    assert e_ok <= CFG.mc.asym_tol
+    # transposing C_S (the F7 orientation bug) FAILS the same line -- the whole point
+    assert e_bad > CFG.mc.asym_tol
+
+
+def test_mlls_prior_ratio_term_is_load_bearing():
+    """HARD (F11, mutation-adequacy): the MLLS ``/p_S`` prior-ratio term is required.
+
+    Every other MLLS call site uses ``p_S = (0.5, 0.5)``; there the fixed-point's
+    prior-ratio step ``γ_j ∝ σ̃_j·(p_T/p_S)`` is renormalization-invariant to dropping
+    ``/p_S``, so a mutant that deletes the division is BITWISE identical and gate 2 is
+    blind to it. This gate runs the SAME MLLS+BCTS pipeline (deliberately miscalibrated
+    logits, ``fit_bcts`` recalibration) on a NON-UNIFORM source prior ``p_S=(0.7,0.3)``
+    with ``p_T=(0.4,0.6)``, where ``/p_S`` is load-bearing: MLLS recovers ``p_T`` and
+    ``w_lab*`` to within the pass lines. A reviewer can delete the ``/ p_S`` in
+    ``mlls_em`` (``ratio = p_T`` instead of ``ratio = p_T / p_S``) and watch THIS test
+    go red (the mutant misses ``p_T`` by ~0.18 and ``w_lab*`` by ~0.60). SYNTHETIC
+    wiring / mutation-adequacy check; consistency only, no guarantee.
+    """
+    g = LabelShiftMixture(means=CFG.k2.means, p_s=CFG.mc.nonunif_p_s,
+                          p_t=CFG.mc.nonunif_p_t, rho=CFG.k2.rho)
+    assert not np.allclose(g.p_s, g.p_s[0])   # p_S must be NON-uniform for /p_S to bite
+    wstar = g.oracle_w_lab()
+    b_mis = np.asarray(CFG.bcts.b_mis, dtype=float)
+    perr, werr = [], []
+    for t in range(CFG.mc.nonunif_T):
+        r = np.random.default_rng(CFG.seed + 3500 + t)
+        Xs, ys, _, _, _ = g.sample(CFG.mc.nonunif_n, r, "S")
+        Xt, _, _, _, _ = g.sample(CFG.mc.nonunif_n, r, "T")
+        ls = g.logits(Xs) / CFG.bcts.T_mis + b_mis
+        lt = g.logits(Xt) / CFG.bcts.T_mis + b_mis
+        T, b = fit_bcts(ls, ys)
+        sm_t = recalibrate_softmax(lt, T, b)
+        p_hat = mlls_em(sm_t, g.p_s)
+        perr.append(float(np.max(np.abs(p_hat - g.p_t))))
+        w_mlls, _ = mlls_weights(sm_t, g.p_s, CFG.b.w_lab_min, CFG.b.w_lab_max)
+        werr.append(float(np.max(np.abs(w_mlls - wstar))))
+    e_p = float(np.mean(perr))
+    e_w = float(np.mean(werr))
+    print(f"[mlls-prior/nonunif] p_S={CFG.mc.nonunif_p_s}: prevalence err={e_p:.4f} "
+          f"(<= {CFG.mc.nonunif_prev_tol}); w_lab err={e_w:.4f} "
+          f"(<= {CFG.mc.nonunif_wlab_tol}); w_lab*={wstar} (deleting /p_S misses both)")
+    # with a load-bearing /p_S, MLLS+BCTS recovers p_T and w_lab* (mutant fails both)
+    assert e_p <= CFG.mc.nonunif_prev_tol
+    assert e_w <= CFG.mc.nonunif_wlab_tol
 
 
 # =========================================================================== #
@@ -437,12 +827,22 @@ def test_diagnostic_kappa_conditioning_monotone():
 
 
 def test_diagnostic_anticausal_consistency():
-    """DIAGNOSTIC (method_note §3.4 step 2, §3.5, §7.5): ``q̂_T`` vs ``Ĉ_S p̂_T``.
+    """HARD (self-test of a REPORTED diagnostic): ``q̂_T`` vs ``Ĉ_S p̂_T``.
 
-    The anti-causal consistency residual is near zero on a label-shift-satisfying
-    synthetic and MATERIALLY larger when ``p(x|y)`` is deliberately perturbed (an
-    entangled x1 tilt that moves the class-conditional). REPORTED continuous
-    diagnostic, never a gate."""
+    The anti-causal consistency residual is a coarse CROSS-RUN tripwire, not a
+    per-pair test. It reads materially larger on a perturbed target ONLY because we
+    hold ``p̂_T`` FIXED from the clean run and confront it with the perturbed
+    ``q̂_T`` -- the reused-reference construction below. We ALSO measure and print
+    the DEPLOYMENT-REALISTIC read (single target, ``p̂_T`` solved from that target's
+    own ``q̂_T``), which is BLIND: the x1-tilt violation and a pure covariate-shift
+    target both read ≈ the clean residual (see :func:`bbse_consistency` docstring).
+    The residual is a REPORTED continuous diagnostic in deployment (never gates the
+    rung); THIS TEST asserts only the plumbing self-test -- that the diagnostic's
+    sign moves the right way on a KNOWN perturbation via the reused reference -- so
+    it is a HARD wiring check, consistent with the other ``test_diagnostic_*``
+    self-tests. (Scope note: within-run sign check, not detection power; the
+    diagnostic can be blind to violations that preserve the target x-marginal --
+    REVIEW_FINDINGS F10.)"""
     gen = _gen_k2()
     r = np.random.default_rng(CFG.seed + 9000)
     Xs, ys, yhs, _, _ = gen.sample(CFG.mc.consistency_n, r, "S")
@@ -455,10 +855,29 @@ def test_diagnostic_anticausal_consistency():
     # perturbed p(x|y): an entangled x1 tilt breaks anti-causal invariance
     gene = _gen_k2(tilt="x1", theta=CFG.k2.theta_ent)
     _, _, yhe, _, _ = gene.sample(CFG.mc.consistency_n, r, "T")
-    res_pert = bbse_consistency(pred_hist(yhe, gen.K), C, p_hat)["residual_l1"]
+    q_pert = pred_hist(yhe, gen.K)
+    res_pert = bbse_consistency(q_pert, C, p_hat)["residual_l1"]   # REUSED clean p_hat
     print(f"[anti-causal] consistency residual_l1: clean={res_clean:.4f} "
-          f"vs perturbed p(x|y)={res_pert:.4f} (materially larger)")
-    assert res_pert > res_clean                          # the check DETECTS the violation
+          f"vs perturbed p(x|y)={res_pert:.4f} (materially larger, REUSED clean p_hat)")
+    assert res_pert > res_clean                          # DETECTS only via the reused reference
+
+    # HONESTY MEASUREMENT (not a new guarantee): the DEPLOYMENT-realistic single-target
+    # read is BLIND. Solve p_hat from the perturbed target's own q_T (as the field must)
+    # and from a pure covariate-shift target (identical x-marginal): both read ≈ clean.
+    _, p_hat_pert = bbse_weights(C, q_pert, gen.p_s, CFG.b.w_lab_min, CFG.b.w_lab_max)
+    res_pert_own = bbse_consistency(q_pert, C, p_hat_pert)["residual_l1"]
+    genc = _gen_k2(p_t=CFG.k2.p_s, tilt="x1", theta=CFG.k2.theta_ent)   # pure covariate shift
+    _, _, yhc, _, _ = genc.sample(CFG.mc.consistency_n, r, "T")
+    q_cov = pred_hist(yhc, gen.K)
+    _, p_hat_cov = bbse_weights(C, q_cov, gen.p_s, CFG.b.w_lab_min, CFG.b.w_lab_max)
+    res_cov_own = bbse_consistency(q_cov, C, p_hat_cov)["residual_l1"]
+    print(f"[anti-causal/BLIND] deployment single-target reads: x1-tilt(own p_hat)="
+          f"{res_pert_own:.4f}, pure-cov-shift(own p_hat)={res_cov_own:.4f} "
+          f"~ clean={res_clean:.4f} (the diagnostic is BLIND to these in single-target usage)")
+    # DOCUMENT the blindness as a measured fact: the single-target read is within a
+    # small band of the clean residual for a violation the reused-reference path flags.
+    assert abs(res_pert_own - res_clean) <= 0.05         # BLIND in deployment usage (measured)
+    assert res_pert_own < 0.1 * res_pert                 # << the reused-reference read
 
 
 def test_diagnostic_n_eff_falls_with_shift():
@@ -611,7 +1030,12 @@ def test_diagnostic_factorization_entanglement():
     Self-test that the divergence is ≈0 when factorizable and materially larger when
     entangled -- so the diagnostic DETECTS when the factorizable-shift premise fails
     (on a real pair, large divergence => downgrade the combined claim, prereg §3.1).
-    REPORTED, never gated."""
+    The divergence is a REPORTED diagnostic in deployment (never gates the rung);
+    THIS TEST is a HARD plumbing self-test asserting the divergence separates the
+    KNOWN factorizable vs entangled synthetics -- consistent with the other
+    ``test_diagnostic_*`` self-tests. (Scope note: 'factorizable' here is the
+    invariant-density-ratio condition, strictly stronger than the FJS sense
+    w(x,y)=U(x)V(y); see REVIEW_FINDINGS F12.)"""
     def _divergence(gen):
         r = np.random.default_rng(CFG.seed + 15000)
         X, y, _, _, _ = gen.sample(CFG.mc.entangle_n, r, "S")

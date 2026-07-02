@@ -239,6 +239,27 @@ def fit_discriminator(X_src, X_tar, w_max, c=None, n_splits=5, l2=1.0, seed=0,
     rng = np.random.default_rng(seed)
     fold_id = _group_folds(groups, n_splits, rng)
 
+    # Degeneracy guard (build_gates.md honesty rail): group-level cross-fitting needs
+    # every fold's TRAINING split (fold_id != k) to contain BOTH domains. If a fold
+    # trains on a single domain -- the one-group-per-domain case, or too few group ids
+    # per domain to spread across folds -- the logistic discriminator sees one class,
+    # converges to a constant posterior, and the odds ratio saturates so w_cov collapses
+    # to all-equal (== w_max): Kish n_eff reads n (maximally healthy) while the covariate
+    # correction is SILENTLY nulled to an unweighted mean. That is unrecoverable here, so
+    # fail LOUD rather than return degenerate weights (method_note §1.5, §1.7).
+    for k in range(n_splits):
+        train = fold_id != k
+        if train.any():
+            dom_train = np.unique(domain[train])
+            assert dom_train.size >= 2, (
+                f"fit_discriminator: fold {k}'s training split is single-domain "
+                f"(domains present={dom_train.tolist()}); group-level cross-fitting cannot "
+                f"learn a source-vs-target boundary and would silently null w_cov to an "
+                f"unweighted mean (all weights == w_max). Provide >=2 group ids per domain "
+                f"that spread across folds (n_splits={n_splits}); one group per domain is "
+                f"impossible in principle."
+            )
+
     d_oof = np.full(len(X), np.nan)
     models = []
     for k in range(n_splits):
@@ -310,6 +331,18 @@ def aipw_risk(losses_src, weights_src, mhat_src, mhat_tar):
         model, the source correction term vanishes;
       * ``ŵ`` correct: the source correction term equals ``E_T[ℓ − m̂]`` and adds
         back to ``mean_tar(m̂) = E_T[m̂]`` to give ``E_T[ℓ]``.
+
+    SCOPE (both branches). This double-robustness holds under PURE COVARIATE shift
+    -- where ``ŵ`` is the sole importance weight and ``E_S[ℓ | φ(x)] = E_T[ℓ | φ(x)]``
+    (outcome-model invariance). It does NOT hold when a residual LABEL-marginal
+    change survives conditioning on ``φ(x)``: under label shift the invariance premise
+    fails in BOTH branches at once -- ``mean_tar(m̂)`` no longer equals ``E_T[ℓ]`` for a
+    source-fit ``m̂`` (the ``m̂``-correct leg breaks), and a covariate-only ``ŵ`` is not
+    the correct joint weight (the ``ŵ``-correct leg breaks) -- so AIPW is no longer
+    unbiased. Under COMBINED shift the doubly-robust property is recovered only when
+    ``ŵ`` is the library's ``Ẑ``-divide JOINT weight
+    (:func:`conformal.label_shift.combine_weights`), not the bare covariate weight.
+    This is a scoping note on the invariance premise, not a new guarantee.
 
     The Hájek single-model estimate stays the auditable PRIMARY; this is the
     residual-shrinkage DIAGNOSTIC (asymptotic, not a finite-sample certificate),

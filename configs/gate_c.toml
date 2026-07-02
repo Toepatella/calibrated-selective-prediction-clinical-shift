@@ -63,6 +63,21 @@ zdiv_n         = 30000          # combined-regime sample for the mean-error chec
 zdiv_tol_pure  = 1e-6           # |ŵ - 1.8| tolerance for the pure-label oracle Ẑ-divide
 zdiv_tol_comb  = 0.02           # mean|w_Zdivide - w*| on the combined regime (oracle inputs)
 zdiv_prod_mult = 5.0            # naïve-product mean error must be >= this x the Ẑ-divide error
+
+# Fully-ESTIMATED combined-regime end-to-end gate: imports conformal.weights
+# and runs BBSE ŵ_lab + cross-fit discriminator ŵ_cov + BCTS Ẑ on the factorizable x2 tilt.
+# This budget HONESTLY DOCUMENTS the estimated-vs-oracle gap rather than hiding it: with
+# fully-estimated inputs the mean weight error is ~0.22 (vs the ~1e-16 oracle-input error
+# gated by zdiv_tol_comb=0.02 above), and ~90%+ of that gap is discriminator misspecification
+# (the linear-logit family cannot represent the log Z(x1) term in log w_cov -- so the oracle
+# w_cov validated at Gate B does NOT transfer to the Gate-C combined regime). NOT a guarantee.
+est_n_disc     = 8000           # discriminator (source/target) fit size
+est_n_bbse     = 8000           # BBSE / BCTS source (+ target predictions) fit size
+est_n_eval     = 30000          # evaluation slice for the mean weight-error measurement
+est_err_lo     = 0.10           # estimated mean|ŵ - w*| must EXCEED this (the gap is real, not ~oracle)
+est_err_hi     = 0.40           # ... and stay below this (regression guard on the documented gap)
+est_disc_share = 0.70           # discriminator misspecification must be >= this fraction of the gap
+est_oracle_max = 1e-6           # oracle-input error on the SAME slice stays tiny (sanity: wiring correct)
 collapse_n     = 20000          # sample for the HG4 pure-regime collapse checks
 collapse_tol   = 1e-6           # per-point collapse tolerance (w_cov==Z ; Z==1)
 # Label-aware vs covariate-only (hard gate 5): signed win + interval non-overlap.
@@ -74,6 +89,34 @@ track_tol  = 0.01               # |combined point-estimate - R_T| tracking toler
 # Ill-conditioning (hard gate 6): merged classes => near-singular Ĉ_S.
 illcond_means = [-0.3, 0.0, 0.3]
 illcond_n     = 1500
+# Asymmetric K=3 regime (mutation-adequacy: KILLS a transposed BBSE confusion).
+# Uneven class spacing (two overlapping low classes at -1.5, 0.0 and one far class
+# at 3.0) with a skewed source prior makes the population joint confusion C_S
+# genuinely ASYMMETRIC (max|C_S - C_S.T| ~ 0.034), so solving BBSE on C_S.T (or the
+# equivalently transposed np.add.at) no longer recovers w_lab*: the correct
+# orientation lands mean max|w-w*| ~ 0.034 while either transpose mutant lands ~0.19
+# (both >> the asym pass line). The shipped K=2/K=3 fixtures are (near-)symmetric and
+# cannot see this bug (F7). w_lab* = (0.6, 1.333, 1.5).
+asym_means = [-1.5, 0.0, 3.0]
+asym_p_s   = [0.5, 0.3, 0.2]
+asym_p_t   = [0.3, 0.4, 0.3]
+asym_rho   = [0.05, 0.4, 0.8]
+asym_n     = 20000            # draw size (large enough that the correct orientation clears the line)
+asym_T     = 200             # MC trials averaged
+asym_tol   = 0.08            # orig ~0.034 passes; either transpose mutant ~0.19 fails
+asym_min_confusion_asym = 0.02   # sanity: the fixture's population C_S really is asymmetric
+# Non-uniform-p_S MLLS regime (mutation-adequacy: KILLS deletion of the /p_S term).
+# Every other MLLS call site uses p_S=(.5,.5), where renormalization-invariance makes
+# the prior-ratio /p_S term inert (the mutant that drops it is bitwise identical). With
+# p_S=(.7,.3) the /p_S division is load-bearing: MLLS+BCTS recovers p_T with prevalence
+# err ~0.010 / w_lab err ~0.033, while dropping /p_S errs ~0.18 (prevalence) / ~0.60
+# (w_lab), both far over the pass lines (F11). w_lab* = (0.5714, 2.0).
+nonunif_p_s = [0.7, 0.3]
+nonunif_p_t = [0.4, 0.6]
+nonunif_n   = 5000           # source/target draw size (mirrors mlls_n)
+nonunif_T   = 100            # MC trials (BCTS fit per trial); kept small to bound runtime
+nonunif_prev_tol = 0.05      # max_y|p_hat - p_T| pass line (mirrors mlls_prev_tol)
+nonunif_wlab_tol = 0.10      # max_y|w_hat - w_lab*| pass line (mirrors mlls_bbse_tol)
 # Reported diagnostics.
 oracle_n    = 2000000           # large-sample MC for the known accepted risk / coverage
 kappa_seps  = [2.5, 1.8, 1.2, 0.7, 0.3]   # K=3 class-separation degradation grid (kappa monotone up)
@@ -85,6 +128,18 @@ mapls_grid  = [50, 100, 300]    # small-m target sizes for the MAPLS ablation
 mapls_T     = 60                # trials per small-m cell
 mapls_alpha = 6.0               # Dirichlet concentration scale for MAPLS (alpha = 1 + mapls_alpha*p_S)
 entangle_n  = 30000             # sample for the factorization-entanglement diagnostic
+
+# D_tar^lab residual gate: the labeled-target-slice premise MEASUREMENT.
+# Divergence/risk-gap budgets separate the factorizable (x2) from the entangled (x1)
+# regime using ONLY labeled samples (never the synthetic oracle w_joint). Verified over
+# 20 seeds: divergence factorizable <=0.0075 vs entangled >=0.18; risk-gap <=0.015 vs
+# >=0.13. These are PROPOSED engineering budgets for a MEASUREMENT, not a certificate.
+dtarlab_src_n   = 8000          # labeled source cohort for the slice-measured joint weight
+dtarlab_m       = 2000          # labeled target slice size m_lab (large here to pin the budget)
+dtarlab_div_fac = 0.05          # factorizable slice-divergence pass line (measured ~<=0.0075)
+dtarlab_div_mult = 10.0         # entangled slice-divergence must be >= this x the factorizable
+dtarlab_gap_fac = 0.05          # factorizable risk-gap pass line (measured ~<=0.015)
+dtarlab_gap_mult = 5.0          # entangled risk-gap must be >= this x the factorizable
 
 [seed]
 base = 20260702                 # np.random.default_rng base seed (build_gates.md §3)

@@ -242,6 +242,8 @@ A pre-registered **empirical coverage check** of the WSR self-normalized (Hájek
 1. to **measure** the residual degradation of the shift correction (plug-in risk under `ŵ` vs the empirical risk on the labeled slice), reported with its own slice-size uncertainty; and
 2. to **fit a simple scalar correction** to the combined weight and **report the measured residual gap** after it.
 
+The measurement pathway is the shipped `conformal.label_shift.residual_on_labeled_target` (with `measure_slice_joint_weight`), exercised as a `build_gates.md §6` hard gate on the synthetic `LabelShiftMixture`: it consumes a labeled target slice and reports the residual risk gap and the divergence between the factorized `ŵ` and a joint weight measured **directly on the labeled samples** (never the oracle), so the factorizable premise is **falsifiable per pair**. It measures and reports only — it identifies and certifies nothing (§8 below).
+
 It does **not** identify any nuisance parameter, it does **not** certify the combined covariate+label case, and the factorizable-shift premise it accompanies is a **modeling choice** that is not identifiable from unlabeled target alone (method note §3.3, §7.4) — never an identification result. If `D_tar^lab` is unavailable for a pair, the combined-shift result is reported **uncorrected** (method note §3.4 step 3), not certified.
 
 ---
